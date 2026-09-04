@@ -763,6 +763,39 @@ function parseFlight(text, filename){
     tSource="GPS_UTC column";
     for(let k=0;k<n;k++){ const d=Date.parse(String(S.gpsutc[k]).replace(" ","T")+"Z"); t[k]=Number.isFinite(d)?d/1000:NaN; }
   } else { tSource="assumed 10 Hz"; for(let k=0;k<n;k++) t[k]=k/10; }
+  /* `t` above is the plotting axis and prefers Elapsed_s because it is exact.
+     But Elapsed_s IS the schedule -- k x period by construction -- so measuring
+     cadence from it would always return the target rate no matter what the
+     loop actually did. Host_UTC is when each sample was really taken, so
+     cadence is measured from that and only falls back when it is absent. */
+  let tHost=null, hostSource="";
+  if(S.hostUtc){
+    const h=new Float64Array(n); let ok=0;
+    for(let k=0;k<n;k++){ const d=Date.parse(String(S.hostUtc[k]));
+      h[k]=Number.isFinite(d)?d/1000:NaN; if(Number.isFinite(h[k])) ok++; }
+    if(ok>n*0.9){ const h0=h.find(Number.isFinite)||0;
+      for(let k=0;k<n;k++) h[k]-=h0; tHost=h; hostSource="Host_UTC (measured)"; }
+  }
+  if(!tHost && S.gpsutc && !S.elapsed){
+    const h=new Float64Array(n); let ok=0;
+    for(let k=0;k<n;k++){ const d=Date.parse(String(S.gpsutc[k]).replace(" ","T")+"Z");
+      h[k]=Number.isFinite(d)?d/1000:NaN; if(Number.isFinite(h[k])) ok++; }
+    if(ok>n*0.9){ const h0=h.find(Number.isFinite)||0;
+      for(let k=0;k<n;k++) h[k]-=h0; tHost=h; hostSource="GPS_UTC (measured)"; }
+  }
+  /* A clock column that never advances -- a GPS time repeated on every row, say
+     -- parses fine but spans zero seconds and would make the rate unmeasurable.
+     Reject any candidate that does not actually progress. */
+  if(tHost){
+    const span=tHost[n-1]-tHost[0];
+    if(!(span>0.5)){ tHost=null; hostSource=""; }
+  }
+  /* Min-Sec on legacy logs is a real wall clock read at write time, so it is a
+     measurement even though it is the plotting axis too. Only Elapsed_s and
+     Sched_UTC are the schedule, and only those make the rate un-measurable. */
+  const scheduledAxis = /Elapsed_s|Sched_UTC/i.test(tSource);
+  if(!tHost && !scheduledAxis) hostSource = tSource + " (measured)";
+
   const t0 = t.find(Number.isFinite) ?? 0;
   for(let k=0;k<n;k++) t[k]=t[k]-t0;
   for(let k=1;k<n;k++) if(!Number.isFinite(t[k])) t[k]=t[k-1];   // hold through gaps
@@ -849,7 +882,9 @@ function parseFlight(text, filename){
 
   const f = {
     id: "f"+Math.random().toString(36).slice(2,9),
-    filename, meta, headers, cols, scales, ages, schemaV2, rows:n, t, S, alt, altSrc, speed, climb,
+    filename, meta, headers, cols, scales, ages, schemaV2, rows:n, t, tHost, hostSource,
+    scheduledAxis,
+    S, alt, altSrc, speed, climb,
     rollD, pitchD, yawD, power, powerSrc, cumWh, dist, distCum, tSource,
     channels, activeChannel,
     volt: act ? act.V : null, curr: act ? act.I : null,
@@ -889,9 +924,26 @@ function computeStats(f){
   const {t,S,power,alt,speed,cumWh} = f;
   const n=f.rows;
   const dur = t[n-1]-t[0];
-  const dts=[]; for(let k=1;k<n;k++){ const d=t[k]-t[k-1]; if(d>0) dts.push(d); }
+  /* Measure against the real clock, not the schedule. tc is Host_UTC where the
+     log has it; only if it does not do we fall back to the plotting axis, and
+     the UI then says so rather than presenting a nominal figure as measured. */
+  const tc = f.tHost || t;
+  const cadenceMeasured = !!f.tHost || !f.scheduledAxis;
+  const dts=[]; for(let k=1;k<n;k++){ const d=tc[k]-tc[k-1]; if(d>0) dts.push(d); }
   dts.sort((a,b)=>a-b);
   const medDt = dts.length ? dts[Math.floor(dts.length/2)] : NaN;
+
+  /* Achieved rate is samples over elapsed wall time, so a cycle that overran
+     and dropped a slot pulls the number down -- which a median interval will
+     not do, since the surviving gaps are still one period apart. */
+  const span = tc[n-1]-tc[0];
+  const achievedHz = span>0 ? (n-1)/span : NaN;
+  const targetHz = (()=>{ const m=f.meta["sample_rate_hz_target"] ?? f.meta["Sample_Rate_Hz"];
+    const v=parseFloat(m); return Number.isFinite(v)&&v>0 ? v : NaN; })();
+  const rateErrHz = (Number.isFinite(achievedHz)&&Number.isFinite(targetHz))
+                    ? achievedHz-targetHz : NaN;
+  const jitterP95 = dts.length ? dts[Math.min(dts.length-1,Math.round(0.95*(dts.length-1)))] : NaN;
+  const gapMax = dts.length ? dts[dts.length-1] : NaN;
 
   const energyWh = cumWh[n-1];
   const meanP = mean(power), peakP = maxOf(power);
@@ -911,7 +963,11 @@ function computeStats(f){
   const endurMin = (Number.isFinite(packWh)&&Number.isFinite(meanP)&&meanP>0) ? packWh/meanP*60 : NaN;
 
   return {
-    dur, durMin:dur/60, medDt, rateHz: medDt>0?1/medDt:NaN,
+    dur, durMin:dur/60, medDt,
+    rateHz: Number.isFinite(achievedHz) ? achievedHz : (medDt>0?1/medDt:NaN),
+    medRateHz: medDt>0?1/medDt:NaN,
+    achievedHz, targetHz, rateErrHz, cadenceMeasured,
+    jitterP95Ms: jitterP95*1000, gapMaxMs: gapMax*1000,
     energyWh, meanPower:meanP, peakPower:peakP,
     whPerMin: dur>0 ? energyWh/(dur/60) : NaN,
     wPerKg: Number.isFinite(mass)&&mass>0 ? meanP/mass : NaN,
@@ -1038,6 +1094,26 @@ function runChecks(f){
 
   /* ---- v2 checks: these only exist because the new logger records them ---- */
   if(f.schemaV2){
+    /* Achieved rate against the declared target. The 0.1 Hz band is tight on
+       purpose: at 10 Hz that is a 1% deviation, and anything worse means slots
+       were dropped or the loop could not keep up -- either way the sample rate
+       written in the metadata is not the rate in the file. */
+    if(Number.isFinite(st.targetHz) && Number.isFinite(st.achievedHz)){
+      const dev = Math.abs(st.rateErrHz);
+      const how = st.cadenceMeasured
+        ? `measured from ${esc(f.hostSource)}`
+        : `inferred from the scheduled grid -- this log has no Host_UTC column, so the figure is nominal, not measured`;
+      if(!st.cadenceMeasured)
+        add("warn","Sample rate cannot be verified",
+          `The file declares ${fmt(st.targetHz,2)} Hz and the timestamps agree, but they are the schedule rather than the real sampling instants (${how}). Re-log with a Host_UTC column to make this checkable.`);
+      else if(dev <= 0.1)
+        add("pass","Sample rate held to target",
+          `${fmt(st.achievedHz,3)} Hz achieved against ${fmt(st.targetHz,2)} Hz declared — ${fmt(dev,3)} Hz off, inside the 0.1 Hz band. ${st.slotsSkipped?`${fmt(st.slotsSkipped,0)} slots skipped.`:"No slots skipped."}`);
+      else
+        add("fail","Sample rate is not what was requested",
+          `${fmt(st.achievedHz,3)} Hz achieved against ${fmt(st.targetHz,2)} Hz declared — ${fmt(dev,2)} Hz off, outside the 0.1 Hz band${st.slotsSkipped?`, with ${fmt(st.slotsSkipped,0)} slots skipped`:""}. Longest gap between samples ${fmt(st.gapMaxMs,0)} ms against a ${fmt(1000/st.targetHz,0)} ms period. Timestamps remain correct, so the data is still usable, but any per-sample rate assumption in downstream analysis is wrong for this file.`);
+    }
+
     // loop timing, straight from the log's own scheduling error
     if(S.schedErr){
       const errs=Array.from(S.schedErr,Math.abs).filter(Number.isFinite);
@@ -1167,11 +1243,13 @@ function runChecks(f){
   if(Number.isFinite(st.satsMin) && st.satsMin>24)
     add("warn","Satellite count looks saturated",
       `Minimum reported count is ${fmt(st.satsMin,0)}, constant across the log. Values above about 24 usually mean the field is a bitmask or a fixed placeholder rather than a live count.`);
-  // 5 timing
+  // 5 dropouts, measured against the real clock where we have one
   if(Number.isFinite(st.medDt)){
-    let gaps=0; for(let k=1;k<f.rows;k++){ const d=f.t[k]-f.t[k-1]; if(d>3*st.medDt) gaps++; }
-    gaps===0 ? add("pass","Sampling is regular",`Median interval ${fmt(st.medDt*1000,0)} ms (${fmt(st.rateHz,1)} Hz), no dropouts.`)
-      : add("warn","Sampling gaps present",`${gaps} interval${gaps>1?"s":""} longer than 3× the median of ${fmt(st.medDt*1000,0)} ms.`);
+    const tc = f.tHost || f.t;
+    let gaps=0; for(let k=1;k<f.rows;k++){ const d=tc[k]-tc[k-1]; if(d>3*st.medDt) gaps++; }
+    const how = st.cadenceMeasured ? "" : " (from the scheduled grid, not measured)";
+    gaps===0 ? add("pass","No sampling dropouts",`Median interval ${fmt(st.medDt*1000,1)} ms, longest ${fmt(st.gapMaxMs,0)} ms${how}.`)
+      : add("warn","Sampling gaps present",`${gaps} interval${gaps>1?"s":""} longer than 3x the median of ${fmt(st.medDt*1000,1)} ms; longest ${fmt(st.gapMaxMs,0)} ms${how}.`);
   }
   // 6 duplicate timestamps
   if(S.gpsutc){
@@ -1719,8 +1797,15 @@ function renderChecks(f){
     ["Time base", esc(f.tSource)],
     ["Duration", fmtDur(s.dur)],
     ["Samples", f.rows.toLocaleString()],
-    ["Median interval", `${fmt(s.medDt*1000,1)} ms`],
-    ["Effective rate", `${fmt(s.rateHz,2)} Hz`],
+    ["Declared target", Number.isFinite(s.targetHz)?`${fmt(s.targetHz,2)} Hz`:"not in header"],
+    ["Achieved rate", Number.isFinite(s.achievedHz)
+        ? `${fmt(s.achievedHz,3)} Hz ${s.cadenceMeasured?"(measured)":"(nominal)"}` : "—"],
+    ["Rate error", Number.isFinite(s.rateErrHz)
+        ? `${s.rateErrHz>=0?"+":""}${fmt(s.rateErrHz,3)} Hz` : "—"],
+    ["Measured from", esc(s.cadenceMeasured ? f.hostSource : "scheduled grid — nominal only")],
+    ["Interval median", `${fmt(s.medDt*1000,1)} ms`],
+    ["Interval p95", Number.isFinite(s.jitterP95Ms)?`${fmt(s.jitterP95Ms,1)} ms`:"—"],
+    ["Longest gap", Number.isFinite(s.gapMaxMs)?`${fmt(s.gapMaxMs,0)} ms`:"—"],
     ["Scheduling error p95", Number.isFinite(s.schedErrP95)?`${fmt(s.schedErrP95,2)} ms`:"not logged"],
     ["Scheduling error max", Number.isFinite(s.schedErrMax)?`${fmt(s.schedErrMax,2)} ms`:"not logged"],
     ["Cycle duration p95", Number.isFinite(s.cycleP95)?`${fmt(s.cycleP95,1)} ms`:"not logged"],
@@ -1912,6 +1997,8 @@ function briefVerdict(f){
   if(Number.isFinite(s.vccMin)&&s.vccMin<4.6) reasons.push("5 V rail dipped");
   if(Number.isFinite(s.channelSpread)&&s.channelSpread>1.15) reasons.push("power channels disagree");
   if(Number.isFinite(s.schedErrP95)&&s.schedErrP95>20) reasons.push("sample cadence not held");
+  if(s.cadenceMeasured && Number.isFinite(s.rateErrHz) && Math.abs(s.rateErrHz)>0.1)
+    reasons.push(`sample rate ${fmt(s.achievedHz,2)} Hz vs ${fmt(s.targetHz,1)} Hz declared`);
   if(f.rows<20) reasons.push("almost no samples");
   /* Any failing consistency check is blocking on its own, whether or not it
      matches one of the named conditions above. */
@@ -1959,8 +2046,11 @@ function renderBrief(f){
      sub:Number.isFinite(s.armedPct)?`${fmt(s.armedPct,0)}% armed`:`${f.rows.toLocaleString()} samples`},
     {k:"Projected endurance", v:Number.isFinite(s.endurMin)?fmt(s.endurMin,1):"—", u:"min",
      sub:p.ratedLoaded?`${fmt(s.endurMin/p.ratedLoaded*100,0)}% of ${p.ratedLoaded} min rated`:"pack Wh unknown"},
-    {k:"Sample cadence", v:Number.isFinite(s.rateHz)?fmt(s.rateHz,2):"—", u:"Hz",
-     sub:Number.isFinite(s.schedErrP95)?`error p95 ${fmt(s.schedErrP95,2)} ms`:"from timestamps"},
+    {k:"Sample rate", v:Number.isFinite(s.achievedHz)?fmt(s.achievedHz,2):"—", u:"Hz",
+     sub: !s.cadenceMeasured ? "nominal — no Host_UTC to measure"
+        : Number.isFinite(s.rateErrHz)
+          ? `${s.rateErrHz>=0?"+":""}${fmt(s.rateErrHz,3)} Hz vs ${fmt(s.targetHz,1)} declared`
+          : `measured · p95 gap ${fmt(s.jitterP95Ms,0)} ms`},
     {k:"Altitude error", v:Number.isFinite(s.navAltErrP95)?fmt(s.navAltErrP95,2):"—", u:"m",
      sub:Number.isFinite(s.navXtrackP95)?`cross-track ${fmt(s.navXtrackP95,1)} m`:"vs commanded"},
     {k:"Vibration peak", v:Number.isFinite(s.vibPeak)?fmt(s.vibPeak,1):"—", u:"",
@@ -2004,9 +2094,13 @@ function renderBrief(f){
   $("#briefIntegrity").innerHTML = [
     row("Schema", f.schemaV2 ? `v2 · ${f.headers.length} columns` : `legacy · ${f.headers.length} columns`),
     row("Time base", esc(f.tSource)),
-    row("Cadence", Number.isFinite(s.schedErrP95)
-        ? `${fmt(s.rateHz,2)} Hz · error p95 ${fmt(s.schedErrP95,2)} ms · max ${fmt(s.schedErrMax,2)} ms`
-        : `${fmt(s.rateHz,2)} Hz (inferred from timestamps)`),
+    row("Sample rate", Number.isFinite(s.achievedHz)
+        ? `${fmt(s.achievedHz,3)} Hz ${s.cadenceMeasured?"measured":"nominal"}`
+          + (Number.isFinite(s.targetHz)?` · ${s.rateErrHz>=0?"+":""}${fmt(s.rateErrHz,3)} Hz vs ${fmt(s.targetHz,1)} declared`:"")
+        : "—"),
+    row("Measured from", esc(s.cadenceMeasured ? f.hostSource : "scheduled grid (not measured)")),
+    row("Interval", Number.isFinite(s.medDt)
+        ? `median ${fmt(s.medDt*1000,1)} ms · p95 ${fmt(s.jitterP95Ms,1)} ms · max ${fmt(s.gapMaxMs,0)} ms` : "—"),
     row("Slots skipped", Number.isFinite(s.slotsSkipped) ? fmt(s.slotsSkipped,0) : "—"),
     row("Worst staleness", Number.isFinite(stale.ms)
         ? `${esc(stale.name)} at ${fmt(stale.ms,0)} ms (p95)` : "—"),
