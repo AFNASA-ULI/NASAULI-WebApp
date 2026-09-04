@@ -1,0 +1,2157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Platform Energy Lab — UAS flight telemetry</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@600;700&family=Saira:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.min.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{
+  --bg:#0A0F13; --panel:#111A21; --panel-2:#0D151B; --line:#1E2B35; --line-2:#2A3B48;
+  --ink:#DDE8EF; --dim:#7C93A3; --dimmer:#55697A;
+  --cyan:#3ED9E8; --amber:#F2A33C; --green:#5FD68D; --magenta:#E07BC4;
+  --red:#FF6B6B; --violet:#93A2FF; --sand:#C9B78A;
+  --r:5px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font:400 14px/1.5 "Saira",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace}
+h1,h2,h3{font-family:"Saira Condensed",sans-serif;font-weight:700;margin:0;letter-spacing:.01em}
+button,select,input{font-family:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+
+/* ---------- placard header ---------- */
+header{
+  border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,#0E171E,#0A1015);
+  padding:14px 20px 12px;
+  display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap;
+}
+.brand h1{font-size:26px;line-height:1;text-transform:uppercase;letter-spacing:.03em}
+.brand h1 span{color:var(--cyan)}
+.eyebrow{
+  font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--dimmer);margin-bottom:5px;
+}
+.hdr-actions{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+.btn{
+  background:#16222B;border:1px solid var(--line-2);color:var(--ink);
+  border-radius:var(--r);padding:7px 13px;font-size:12.5px;font-weight:500;cursor:pointer;
+  transition:background .12s,border-color .12s;
+}
+.btn:hover{background:#1D2C37;border-color:#3A5061}
+.btn.primary{background:#12303A;border-color:#245F6D;color:#9FEAF3}
+.btn.primary:hover{background:#164254}
+.btn.sm{padding:4px 9px;font-size:11px}
+
+/* ---------- commander verdict ---------- */
+.verdict{
+  border:1px solid var(--line-2);border-radius:var(--r);padding:15px 18px;
+  margin-bottom:13px;display:flex;gap:16px;align-items:flex-start;
+  background:var(--panel);
+}
+.verdict.ok{border-color:#2C6B48;background:linear-gradient(180deg,#0F1D17,#0C1613)}
+.verdict.warn{border-color:#7A5A1E;background:linear-gradient(180deg,#1E1809,#161207)}
+.verdict.bad{border-color:#7A2E2E;background:linear-gradient(180deg,#1E1010,#160B0B)}
+.verdict .vstamp{
+  font-family:"Saira Condensed",sans-serif;font-weight:700;font-size:30px;line-height:1;
+  letter-spacing:.04em;text-transform:uppercase;flex:0 0 auto;padding-top:2px;
+}
+.verdict.ok .vstamp{color:var(--green)}
+.verdict.warn .vstamp{color:var(--amber)}
+.verdict.bad .vstamp{color:var(--red)}
+.verdict .vbody{flex:1 1 auto;min-width:0}
+.verdict .vhead{font-size:15px;font-weight:600;margin-bottom:4px}
+.verdict .vnote{color:var(--dim);font-size:13px;line-height:1.55}
+.kpis-brief .kpi{min-width:0}
+.exc{display:flex;gap:11px;padding:11px 13px;border-bottom:1px solid var(--line);align-items:flex-start}
+.exc:last-child{border-bottom:0}
+.exc .lvl{flex:0 0 auto;margin-top:1px}
+.exc .txt{min-width:0}
+.exc .t{font-weight:600;font-size:13px;margin-bottom:2px}
+.exc .d{color:var(--dim);font-size:12.5px;line-height:1.5}
+.exc-none{padding:16px 13px;color:var(--dim);font-size:13px}
+
+/* ---------- HUD tape ---------- */
+.hud{
+  border-bottom:1px solid var(--line);background:var(--panel-2);
+  display:flex;gap:0;overflow-x:auto;position:sticky;top:0;z-index:40;
+}
+.hud-cell{
+  padding:8px 16px;border-right:1px solid var(--line);min-width:104px;flex:0 0 auto;
+}
+.hud-cell .k{font-family:"JetBrains Mono",monospace;font-size:9.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--dimmer)}
+.hud-cell .v{font-family:"JetBrains Mono",monospace;font-size:17px;font-weight:500;line-height:1.25}
+.hud-cell .v small{font-size:10px;color:var(--dim);margin-left:2px}
+.hud-mode{margin-left:auto;display:flex;align-items:center;padding:0 16px;flex:0 0 auto}
+.hud-mode b{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.14em;
+  color:var(--dimmer);text-transform:uppercase;font-weight:400}
+
+/* ---------- strip (signature) ---------- */
+.strip-wrap{background:var(--panel-2);border-bottom:1px solid var(--line);padding:9px 14px 11px}
+.strip-head{display:flex;align-items:center;gap:10px;margin-bottom:5px}
+.strip-head .lbl{font-family:"JetBrains Mono",monospace;font-size:9.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--dimmer)}
+.strip-head .hint{font-size:11px;color:var(--dimmer);margin-left:auto}
+#strip{width:100%;height:52px;display:block;cursor:ew-resize;border-radius:3px}
+
+/* ---------- tabs ---------- */
+nav.tabs{display:flex;gap:2px;padding:0 14px;background:var(--bg);
+  border-bottom:1px solid var(--line);overflow-x:auto}
+.tab{
+  background:none;border:0;border-bottom:2px solid transparent;padding:11px 15px;
+  font-family:"Saira Condensed",sans-serif;font-weight:600;font-size:14px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--dim);cursor:pointer;white-space:nowrap;
+}
+.tab:hover{color:var(--ink)}
+.tab[aria-selected="true"]{color:var(--cyan);border-bottom-color:var(--cyan)}
+
+main{padding:18px 14px 60px;max-width:1680px;margin:0 auto}
+.view[hidden]{display:none}
+
+/* ---------- panels ---------- */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.panel-head{
+  display:flex;align-items:center;gap:9px;padding:9px 13px;border-bottom:1px solid var(--line);
+  background:var(--panel-2);
+}
+.panel-head h3{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink)}
+.panel-head .tick{width:3px;height:12px;background:var(--cyan);border-radius:1px;flex:0 0 auto}
+.panel-head .right{margin-left:auto;display:flex;gap:6px;align-items:center}
+.panel-body{padding:13px}
+
+.grid{display:grid;gap:13px}
+.g-charts{grid-template-columns:repeat(auto-fit,minmax(400px,1fr))}
+.g-2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+
+/* ---------- KPI ---------- */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:1px;background:var(--line)}
+.kpi{background:var(--panel);padding:11px 13px}
+.kpi .k{font-family:"JetBrains Mono",monospace;font-size:9.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--dimmer);margin-bottom:3px}
+.kpi .v{font-family:"JetBrains Mono",monospace;font-size:21px;font-weight:500;line-height:1.15}
+.kpi .v small{font-size:11px;color:var(--dim);margin-left:3px;font-weight:400}
+.kpi .sub{font-size:11px;color:var(--dim);margin-top:2px}
+.kpi.hero .v{color:var(--amber);font-size:25px}
+
+/* ---------- spec / meta lists ---------- */
+dl.spec{margin:0;display:grid;grid-template-columns:auto 1fr;gap:0}
+dl.spec dt{
+  font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--dimmer);padding:6px 14px 6px 0;border-bottom:1px solid var(--line);white-space:nowrap;
+}
+dl.spec dd{margin:0;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px;text-align:right}
+dl.spec dt:last-of-type,dl.spec dd:last-of-type{border-bottom:0}
+
+.badge{
+  display:inline-block;font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;padding:2px 7px;border-radius:3px;border:1px solid;
+}
+.b-cyan{color:var(--cyan);border-color:#20505C;background:#0F2830}
+.b-green{color:var(--green);border-color:#1F5238;background:#0D2418}
+.b-amber{color:var(--amber);border-color:#5C4520;background:#2A1E0B}
+.b-red{color:var(--red);border-color:#5E2A2A;background:#2A1212}
+.b-dim{color:var(--dim);border-color:var(--line-2);background:#151F26}
+
+/* ---------- charts ---------- */
+.chart-host{width:100%}
+.uplot{width:100%!important}
+.u-legend{display:none!important}
+.legend{display:flex;gap:13px;flex-wrap:wrap;padding:0 13px 9px}
+.legend span{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--dim);
+  display:inline-flex;align-items:center;gap:5px}
+.legend i{width:11px;height:2.5px;border-radius:2px;display:inline-block}
+
+/* ---------- table ---------- */
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{
+  font-family:"JetBrains Mono",monospace;font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--dimmer);text-align:right;padding:7px 10px;border-bottom:1px solid var(--line-2);font-weight:400;
+}
+th:first-child,td:first-child{text-align:left}
+td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:right;
+  font-family:"JetBrains Mono",monospace;font-size:12px}
+td.name{font-family:"Saira",sans-serif;font-size:13px}
+tbody tr:hover{background:#141F27}
+
+/* ---------- bars ---------- */
+.bar-row{display:grid;grid-template-columns:150px 1fr 92px;align-items:center;gap:11px;margin-bottom:7px}
+.bar-row .nm{font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar-track{height:15px;background:#0C141A;border:1px solid var(--line);border-radius:3px;overflow:hidden}
+.bar-fill{height:100%;background:var(--cyan);opacity:.85}
+.bar-row .val{font-family:"JetBrains Mono",monospace;font-size:12px;text-align:right}
+
+/* ---------- dropzone ---------- */
+.drop{
+  border:1.5px dashed var(--line-2);border-radius:var(--r);padding:44px 20px;text-align:center;
+  background:var(--panel-2);transition:border-color .15s,background .15s;
+}
+.drop.over{border-color:var(--cyan);background:#0F1E25}
+.drop h2{font-size:19px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:7px}
+.drop p{color:var(--dim);font-size:13px;margin:0 0 16px}
+
+/* ---------- flight chips ---------- */
+.chips{display:flex;gap:7px;flex-wrap:wrap;padding:0 0 13px}
+.chip{
+  display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line-2);
+  border-radius:var(--r);padding:5px 6px 5px 11px;cursor:pointer;font-size:12.5px;
+}
+.chip[aria-current="true"]{border-color:var(--cyan);background:#0F2229}
+.chip .dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+.chip .x{background:none;border:0;color:var(--dimmer);cursor:pointer;font-size:15px;line-height:1;padding:0 3px}
+.chip .x:hover{color:var(--red)}
+
+/* ---------- checks ---------- */
+.check{display:flex;gap:11px;padding:10px 0;border-bottom:1px solid var(--line);align-items:flex-start}
+.check:last-child{border-bottom:0}
+.check .st{flex:0 0 auto;margin-top:1px}
+.check .tx b{display:block;font-weight:600;font-size:13px;margin-bottom:2px}
+.check .tx span{color:var(--dim);font-size:12.5px}
+
+#map{height:480px;border-radius:var(--r);background:#0C141A}
+.leaflet-container{background:#0C141A;font-family:"Saira",sans-serif}
+.map-legend{display:flex;align-items:center;gap:9px;font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--dim)}
+.ramp{width:130px;height:9px;border-radius:2px;
+  background:linear-gradient(90deg,#12414E,#3ED9E8,#5FD68D,#F2A33C,#FF6B6B)}
+
+.note{font-size:12px;color:var(--dim);line-height:1.55}
+.sel{background:#16222B;border:1px solid var(--line-2);border-radius:var(--r);padding:6px 9px;font-size:12.5px}
+.num-in{background:#0C141A;border:1px solid var(--line-2);border-radius:var(--r);padding:5px 8px;
+  font-family:"JetBrains Mono",monospace;font-size:12px;width:82px;text-align:right}
+.stack{display:flex;flex-direction:column;gap:13px}
+.hidden{display:none!important}
+
+.phase-bar{display:flex;height:26px;border-radius:3px;overflow:hidden;border:1px solid var(--line);margin-bottom:11px}
+.phase-seg{height:100%;position:relative}
+
+@media (max-width:640px){
+  .brand h1{font-size:21px}
+  .bar-row{grid-template-columns:106px 1fr 76px}
+  header{padding:12px 14px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="eyebrow">USAFA · multi-platform UAS energy &amp; position telemetry</div>
+    <h1>Platform <span>Energy</span> Lab</h1>
+  </div>
+  <div class="hdr-actions">
+    <input type="file" id="file" accept=".csv,.txt" multiple hidden>
+    <button class="btn primary" id="btnLoad">Load flight logs</button>
+    <button class="btn" id="btnReset" title="Reset zoom on all charts">Reset zoom</button>
+    <button class="btn" id="btnExport">Export summary</button>
+  </div>
+</header>
+
+<div class="hud" id="hud"></div>
+
+<div class="strip-wrap" id="stripWrap" hidden>
+  <div class="strip-head">
+    <span class="lbl">Flight strip — altitude &amp; power</span>
+    <span class="hint">Drag to zoom every chart · double-click to reset</span>
+  </div>
+  <canvas id="strip"></canvas>
+</div>
+
+<nav class="tabs" role="tablist" id="tabs">
+  <button class="tab" role="tab" data-view="v-brief" aria-selected="true">Brief</button>
+  <button class="tab" role="tab" data-view="v-flight" aria-selected="false">Flight</button>
+  <button class="tab" role="tab" data-view="v-track" aria-selected="false">Track</button>
+  <button class="tab" role="tab" data-view="v-phases" aria-selected="false">Phases</button>
+  <button class="tab" role="tab" data-view="v-compare" aria-selected="false">Compare</button>
+  <button class="tab" role="tab" data-view="v-health" aria-selected="false">Data health</button>
+</nav>
+
+<main>
+  <div class="chips" id="chips"></div>
+
+  <div id="empty">
+    <div class="drop" id="drop">
+      <h2>Drop flight logs here</h2>
+      <p>Pi Zero telemetry CSVs — the <span class="mono"># metadata</span> header is read automatically.<br>
+         Load several at once to compare platforms.</p>
+      <button class="btn primary" id="btnLoad2">Choose files</button>
+    </div>
+    <div class="grid g-2" style="margin-top:13px">
+      <div class="panel"><div class="panel-head"><i class="tick"></i><h3>What it reads</h3></div>
+        <div class="panel-body note">
+          The <span class="mono">#</span> metadata header (session, platform, operator,
+          factorial condition, commanded values, chrony state), then any subset of the
+          v2 schema's 182 columns — power, flight profile, vibration, EKF, wind, loop
+          timing and per-message staleness. Legacy 41-column logs still load: units are
+          normalised on the way in, so mm, cm/s and degrees×10⁷ all arrive as metres,
+          m/s and degrees. The platform is matched from the header or the filename.
+        </div>
+      </div>
+      <div class="panel"><div class="panel-head"><i class="tick"></i><h3>What it computes</h3></div>
+        <div class="panel-body note">
+          A GO / REVIEW / HOLD verdict first, then energy, endurance against the pack's
+          rated watt-hours, specific power, and where the charge went by phase. All three
+          power channels are cross-checked against each other and against the autopilot's
+          own energy counter; cadence, staleness, vibration, rails and link errors decide
+          whether the numbers can be trusted at all.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BRIEF: the decision view. Verdict, the numbers that drive it, exceptions only. -->
+  <section class="view" id="v-brief" hidden>
+    <div class="verdict" id="verdict"></div>
+    <div class="kpis kpis-brief" id="briefKpis"></div>
+    <div class="grid g-2" style="margin-top:13px">
+      <div class="panel">
+        <div class="panel-head"><i class="tick"></i><h3>Needs attention</h3>
+          <div class="right note" id="excCount"></div></div>
+        <div class="panel-body" id="exceptions"></div>
+      </div>
+      <div class="stack">
+        <div class="panel">
+          <div class="panel-head"><i class="tick"></i><h3>Sortie</h3></div>
+          <div class="panel-body"><dl class="spec" id="briefSortie"></dl></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><i class="tick"></i><h3>Data integrity</h3></div>
+          <div class="panel-body"><dl class="spec" id="briefIntegrity"></dl></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FLIGHT -->
+  <section class="view" id="v-flight" hidden>
+    <div class="grid g-2" style="margin-bottom:13px">
+      <div class="panel">
+        <div class="panel-head"><i class="tick"></i><h3>Flight record</h3>
+          <div class="right"><span id="platBadge"></span></div>
+        </div>
+        <div class="panel-body"><dl class="spec" id="metaList"></dl></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><i class="tick"></i><h3>Airframe</h3>
+          <div class="right">
+            <select class="sel" id="platSel" title="Override the detected platform"></select>
+          </div>
+        </div>
+        <div class="panel-body"><dl class="spec" id="specList"></dl></div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom:13px">
+      <div class="panel-head"><i class="tick"></i><h3>Energy &amp; endurance</h3>
+        <div class="right note">
+          Measured by
+          <select class="sel" id="chanSel" title="Which power measurement drives these numbers"></select>
+          &nbsp;Pack
+          <input class="num-in" id="packIn" type="number" step="1" min="1"> Wh
+          &nbsp;Mass
+          <input class="num-in" id="massIn" type="number" step="0.1" min="0.1"> kg
+        </div>
+      </div>
+      <div id="chanWarn"></div>
+      <div class="kpis" id="kpis"></div>
+    </div>
+
+    <div class="grid g-charts" id="charts"></div>
+  </section>
+
+  <!-- TRACK -->
+  <section class="view" id="v-track" hidden>
+    <div class="panel">
+      <div class="panel-head"><i class="tick"></i><h3>Ground track</h3>
+        <div class="right">
+          <select class="sel" id="mapMetric">
+            <option value="alt">Colour by altitude</option>
+            <option value="power">Colour by power</option>
+            <option value="speed">Colour by ground speed</option>
+          </select>
+          <span class="map-legend"><b id="rampLo">lo</b><span class="ramp"></span><b id="rampHi">hi</b></span>
+        </div>
+      </div>
+      <div class="panel-body"><div id="map"></div></div>
+    </div>
+    <div class="grid g-2" style="margin-top:13px">
+      <div class="panel"><div class="panel-head"><i class="tick"></i><h3>Position summary</h3></div>
+        <div class="panel-body"><dl class="spec" id="posList"></dl></div>
+      </div>
+      <div class="panel"><div class="panel-head"><i class="tick"></i><h3>Reading the track</h3></div>
+        <div class="panel-body note" id="trackNote"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PHASES -->
+  <section class="view" id="v-phases" hidden>
+    <div class="panel" style="margin-bottom:13px">
+      <div class="panel-head"><i class="tick"></i><h3>Where the charge went</h3></div>
+      <div class="panel-body">
+        <div class="phase-bar" id="phaseBar"></div>
+        <table><thead><tr>
+          <th>Phase</th><th>Time</th><th>Share</th><th>Mean power</th><th>Peak power</th>
+          <th>Energy</th><th>Energy share</th><th>Mean alt</th>
+        </tr></thead><tbody id="phaseBody"></tbody></table>
+      </div>
+    </div>
+    <div class="grid g-2">
+      <div class="panel"><div class="panel-head"><i class="tick"></i><h3>Power distribution</h3></div>
+        <div class="panel-body"><div id="histHost"></div></div>
+      </div>
+      <div class="panel"><div class="panel-head"><i class="tick"></i><h3>How phases are assigned</h3></div>
+        <div class="panel-body note">
+          Assigned per sample from altitude above launch and smoothed climb rate:
+          <b>ground</b> below 1 m, <b>climb</b> above +0.4 m/s, <b>descent</b> below −0.4 m/s,
+          <b>hover</b> when level and slower than 1 m/s, <b>cruise</b> otherwise.
+          Thresholds are deliberately blunt — for multirotors the hover/cruise split is the one to
+          treat with care, since a slow repositioning move reads as hover.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPARE -->
+  <section class="view" id="v-compare" hidden>
+    <div class="panel" style="margin-bottom:13px">
+      <div class="panel-head"><i class="tick"></i><h3>Platform comparison</h3>
+        <div class="right">
+          <select class="sel" id="cmpMetric">
+            <option value="whPerMin">Energy rate (Wh/min)</option>
+            <option value="meanPower">Mean power (W)</option>
+            <option value="wPerKg">Specific power (W/kg)</option>
+            <option value="energyWh">Energy used (Wh)</option>
+            <option value="whPerKm">Energy per km (Wh/km)</option>
+            <option value="durMin">Duration (min)</option>
+            <option value="endurMin">Projected endurance (min)</option>
+          </select>
+        </div>
+      </div>
+      <div class="panel-body"><div id="cmpBars"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><i class="tick"></i><h3>All loaded flights</h3>
+        <div class="right"><button class="btn sm" id="btnCsv">Download CSV</button></div>
+      </div>
+      <div class="panel-body" style="overflow-x:auto">
+        <table><thead><tr>
+          <th>Flight</th><th>Platform</th><th>Type</th><th>Duration</th><th>Mean W</th><th>Peak W</th>
+          <th>Wh</th><th>Wh/min</th><th>W/kg</th><th>Wh/km</th><th>Max alt</th><th>Dist</th><th>Min V/cell</th>
+        </tr></thead><tbody id="cmpBody"></tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- HEALTH -->
+  <section class="view" id="v-health" hidden>
+    <div class="grid g-2">
+      <div class="stack">
+        <div class="panel"><div class="panel-head"><i class="tick"></i><h3>Consistency checks</h3></div>
+          <div class="panel-body" id="checks"></div>
+        </div>
+        <div class="panel"><div class="panel-head"><i class="tick"></i><h3>Timing</h3></div>
+          <div class="panel-body"><dl class="spec" id="timingList"></dl></div>
+        </div>
+      </div>
+      <div class="panel"><div class="panel-head"><i class="tick"></i><h3>Columns detected</h3>
+          <div class="right note" id="colCount"></div></div>
+        <div class="panel-body" style="max-height:620px;overflow:auto">
+          <table><thead><tr><th>Signal</th><th>Source column</th><th>Missing</th><th>Range</th></tr></thead>
+          <tbody id="colBody"></tbody></table>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.iife.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+"use strict";
+
+/* ============================ palette ============================ */
+const C = {
+  cyan:"#3ED9E8", amber:"#F2A33C", green:"#5FD68D", magenta:"#E07BC4",
+  red:"#FF6B6B", violet:"#93A2FF", sand:"#C9B78A", dim:"#7C93A3",
+  grid:"#1B2731", axis:"#55697A", panel:"#111A21"
+};
+
+/* ============================ platform database ============================
+   Transcribed from Platforms_USAFA_10JUL2025. packWh is derived where the
+   pack chemistry and cell count pin it down; left null where the sheet says TBD. */
+const PLATFORMS = [
+  { id:"albatross", name:"Albatross", type:"Fixed-wing", aliases:["albatross"],
+    size:"3 m span", cells:6, chem:"Li-Po 6S (or Li-Ion)", capacity:"13,600 mAh",
+    packWh:302, massKg:5.6, payloadKg:4.4, ratedLoaded:60, ratedEmpty:120,
+    status:"Ready to purchase", availability:"Delivery + 90 days",
+    batterySrc:"Applied Aeronautics, Austin TX",
+    note:"Li-Ion option (233 Wh/kg) roughly doubles endurance over the 6S Li-Po." },
+  { id:"trinity", name:"Trinity Pro", type:"Hybrid VTOL / fixed-wing", aliases:["trinitypro","trinity"],
+    size:"2.394 m span", cells:null, chem:"24 lithium-ion cells", capacity:"12,000 mAh",
+    packWh:null, massKg:4.75, payloadKg:1.0, ratedLoaded:90, ratedEmpty:90,
+    status:"Quote update requested", availability:"Delivery + 90 days",
+    batterySrc:"Not specified", note:"Pack voltage not given on the sheet, so watt-hours can't be pinned down." },
+  { id:"wingtra", name:"Wingtra One", type:"Hybrid VTOL copter / fixed-wing", aliases:["wingtraone","wingtra"],
+    size:"1.25 m span", cells:null, chem:"2 × Li-Ion", capacity:"99 Wh each",
+    packWh:198, massKg:3.7, payloadKg:0.8, ratedLoaded:59, ratedEmpty:null,
+    status:"Ready to purchase", availability:"Delivery + 90 days",
+    batterySrc:"Wingtra", note:"" },
+  { id:"delta", name:"Generic Delta Wing", type:"Fixed-wing", aliases:["genericdeltawing","deltawing"],
+    size:"96.52 cm span", cells:null, chem:"TBD", capacity:"TBD",
+    packWh:null, massKg:null, payloadKg:null, ratedLoaded:null, ratedEmpty:null,
+    status:"Needs modifications", availability:"In hand, < 60 days",
+    batterySrc:"TBD", note:"Sheet is mostly TBD — set takeoff mass by hand for W/kg." },
+  { id:"tarotx6", name:"Tarot X6", type:"Hex-copter", aliases:["tarotx6","tarrotx6"],
+    size:"96 × 96 × 32 cm", cells:6, chem:"Li-Po 6S", capacity:"10,000 mAh",
+    packWh:222, massKg:2.0, payloadKg:0.7, ratedLoaded:15, ratedEmpty:20,
+    status:"Needs modifications", availability:"In hand, < 60 days",
+    batterySrc:"Aurelia Aerospace, Las Vegas NV", note:"" },
+  { id:"tarot450", name:"Tarot 450", type:"Quad-copter", aliases:["tarot450","tarrot450","tarot 450"],
+    size:"36 × 36 × 26 cm", cells:3, chem:"Li-Po 3S", capacity:"5,000 mAh",
+    packWh:55.5, massKg:1.3, payloadKg:0.25, ratedLoaded:10, ratedEmpty:15,
+    status:"Needs modifications", availability:"In hand, < 60 days",
+    batterySrc:"Thunder Power, Las Vegas NV",
+    note:"Sheet also lists a 4S 14.8 V 74 Wh pack — check measured voltage before trusting the 55.5 Wh figure." },
+  { id:"x8", name:"3DR X8", type:"Octo-copter", aliases:["3drx8","3dr"],
+    size:"35 × 51 × 20 cm", cells:4, chem:"Li-Po 4S", capacity:"10,000 mAh",
+    packWh:148, massKg:2.56, payloadKg:1.0, ratedLoaded:null, ratedEmpty:15,
+    status:"Needs modifications", availability:"In hand, < 60 days",
+    batterySrc:"TBD", note:"" },
+  { id:"spirit", name:"Ascent Spirit", type:"Co-axial", aliases:["ascentspirit","ascent","spirit"],
+    size:"10.6 × 30.5 cm", cells:12, chem:"Li-Ion 12S", capacity:"6,000 mAh @ 44.4 V",
+    packWh:266, massKg:1.8, payloadKg:3.1, ratedLoaded:16, ratedEmpty:38,
+    status:"Ready to purchase", availability:"Delivery + 90 days",
+    batterySrc:"Ascent AeroSystems",
+    note:"Rated times double with two packs (32 min loaded / 53 min empty)." }
+];
+const UNKNOWN_PLATFORM = { id:"unknown", name:"Unidentified", type:"—", size:"—", cells:null,
+  chem:"—", capacity:"—", packWh:null, massKg:null, payloadKg:null, ratedLoaded:null,
+  ratedEmpty:null, status:"—", availability:"—", batterySrc:"—", note:"" };
+
+/* ============================ column resolution ============================ */
+/* Signals are resolved against the CSV header. Each source carries its own
+   scale factor, so v2 logs (SI units) and legacy logs (mm, cm/s, deg×1e7)
+   both normalise to the same internal units and nothing downstream has to
+   care which schema it was handed. First match wins, so v2 comes first. */
+const SIGNALS = [
+  /* ---- time base ---- */
+  { key:"schedUtc", label:"Scheduled UTC",   kind:"text", srcs:[{re:/^Sched_UTC$/i}] },
+  { key:"hostUtc",  label:"Host UTC",        kind:"text", srcs:[{re:/^Host_UTC$/i}] },
+  { key:"elapsed",  label:"Elapsed",         unit:"s",    srcs:[{re:/^Elapsed_s$/i}] },
+  { key:"minsec",   label:"Elapsed clock",   kind:"text", srcs:[{re:/^min-?sec$/i}] },
+  { key:"rtc",      label:"RTC time",        kind:"text", srcs:[{re:/^RTC_UTC$/i},{re:/rtc_?utc/i}] },
+  { key:"gpsutc",   label:"GPS time",        kind:"text", srcs:[{re:/gps_?utc/i}] },
+  { key:"synced",   label:"GPS synced",      kind:"bool", srcs:[{re:/gps_?synced/i}] },
+
+  /* ---- loop timing (v2 only) ---- */
+  { key:"schedErr", label:"Scheduling error", unit:"ms", srcs:[{re:/^Sched_Error_ms$/i}] },
+  { key:"cycleMs",  label:"Cycle duration",   unit:"ms", srcs:[{re:/^Cycle_ms$/i}] },
+  { key:"skipped",  label:"Slots skipped",    unit:"",   srcs:[{re:/^Slots_Skipped$/i}] },
+
+  /* ---- onboard ADC channel ---- */
+  { key:"adcV",  label:"ADC voltage", unit:"V", srcs:[{re:/^ADC_Voltage_V$/i},{re:/^Battery_Voltage_V$/i},{re:/batt.*volt/i}] },
+  { key:"adcI",  label:"ADC current", unit:"A", srcs:[{re:/^ADC_Current_A$/i},{re:/^Battery_Current_A$/i},{re:/batt.*current/i}] },
+  { key:"adcW",  label:"ADC power",   unit:"W", srcs:[{re:/^ADC_Power_W$/i},{re:/^Battery_Power_W$/i},{re:/batt.*power/i}] },
+  { key:"temp",  label:"Battery temp", unit:"\u00b0C", srcs:[{re:/^Battery_Temp_C$/i},{re:/batt.*temp/i}] },
+  { key:"tempAge", label:"Temp age",  unit:"ms", srcs:[{re:/^Temp_Age_ms$/i}] },
+
+  /* ---- BATTERY_STATUS ---- */
+  { key:"batV",  label:"Battery voltage", unit:"V",   srcs:[{re:/^BAT_Voltage_V$/i},{re:/^PM_Voltage_V$/i}] },
+  { key:"batI",  label:"Battery current", unit:"A",   srcs:[{re:/^BAT_Current_A$/i},{re:/^PM_Current_A$/i}] },
+  { key:"batW",  label:"Battery power",   unit:"W",   srcs:[{re:/^PM_Power_W$/i}] },
+  { key:"consumed", label:"Charge consumed", unit:"mAh", srcs:[{re:/^BAT_Consumed_mAh$/i},{re:/consumed_?mah/i}] },
+  { key:"energyHj", label:"Energy consumed", unit:"hJ", srcs:[{re:/^BAT_Energy_hJ$/i}] },
+  { key:"pct",   label:"Charge remaining", unit:"%",  srcs:[{re:/^BAT_Remaining_pct$/i},{re:/remaining_?pct/i}] },
+  { key:"cell2", label:"Cell 2", unit:"V", srcs:[{re:/^BAT_Cell2_V$/i}] },
+  { key:"cell3", label:"Cell 3", unit:"V", srcs:[{re:/^BAT_Cell3_V$/i}] },
+  { key:"cell4", label:"Cell 4", unit:"V", srcs:[{re:/^BAT_Cell4_V$/i}] },
+  { key:"batTemp", label:"Pack temp", unit:"\u00b0C", scaleNote:"cdegC", srcs:[{re:/^BAT_Temp_cdegC$/i, scale:0.01}] },
+
+  /* ---- SYS_STATUS: a second, independent V/I path ---- */
+  { key:"sysV", label:"SYS voltage", unit:"V", srcs:[{re:/^SYS_Voltage_V$/i}] },
+  { key:"sysI", label:"SYS current", unit:"A", srcs:[{re:/^SYS_Current_A$/i}] },
+  { key:"sysLoad",  label:"CPU load",    unit:"%", srcs:[{re:/^SYS_Load_pct$/i}] },
+  { key:"sysDrop",  label:"Link drop",   unit:"%", srcs:[{re:/^SYS_DropRateComm$/i}] },
+  { key:"sysErr",   label:"Link errors", unit:"",  srcs:[{re:/^SYS_ErrorsComm$/i}] },
+
+  /* ---- POWER_STATUS: brownout detection ---- */
+  { key:"vcc",    label:"5V rail",    unit:"V", srcs:[{re:/^PWR_Vcc_V$/i}] },
+  { key:"vservo", label:"Servo rail", unit:"V", srcs:[{re:/^PWR_Vservo_V$/i}] },
+
+  /* ---- attitude ---- */
+  { key:"roll",  label:"Roll",  unit:"rad", srcs:[{re:/^ATT_Roll_rad$/i},{re:/imu_?roll_?rad/i}] },
+  { key:"pitch", label:"Pitch", unit:"rad", srcs:[{re:/^ATT_Pitch_rad$/i},{re:/imu_?pitch_?rad/i}] },
+  { key:"yaw",   label:"Yaw",   unit:"rad", srcs:[{re:/^ATT_Yaw_rad$/i},{re:/imu_?yaw_?rad/i}] },
+  { key:"rollRate", label:"Roll rate", unit:"rad/s", srcs:[{re:/^ATT_RollRate_rad_s$/i},{re:/roll_?speed/i}] },
+  { key:"pitchRate",label:"Pitch rate",unit:"rad/s", srcs:[{re:/^ATT_PitchRate_rad_s$/i},{re:/pitch_?speed/i}] },
+  { key:"yawRate",  label:"Yaw rate",  unit:"rad/s", srcs:[{re:/^ATT_YawRate_rad_s$/i},{re:/yaw_?speed/i}] },
+  { key:"ax", label:"Accel X", unit:"mg", srcs:[{re:/^IMU_Xacc_mg$/i},{re:/imu_?x_?acc/i}] },
+  { key:"ay", label:"Accel Y", unit:"mg", srcs:[{re:/^IMU_Yacc_mg$/i},{re:/imu_?y_?acc/i}] },
+  { key:"az", label:"Accel Z", unit:"mg", srcs:[{re:/^IMU_Zacc_mg$/i},{re:/imu_?z_?acc/i}] },
+
+  /* ---- position, normalised to degrees and metres ---- */
+  { key:"lat", label:"Latitude", unit:"\u00b0", srcs:[
+      {re:/^POS_Lat_deg$/i},{re:/^GPS_Lat_deg$/i},
+      {re:/fusedgps_?lat/i, scale:1e-7},{re:/rawgps_?lat/i, scale:1e-7}] },
+  { key:"lon", label:"Longitude", unit:"\u00b0", srcs:[
+      {re:/^POS_Lon_deg$/i},{re:/^GPS_Lon_deg$/i},
+      {re:/fusedgps_?lon/i, scale:1e-7},{re:/rawgps_?lon/i, scale:1e-7}] },
+  { key:"altMsl", label:"Altitude MSL", unit:"m", srcs:[
+      {re:/^POS_AltMSL_m$/i},{re:/^GPS_Alt_m$/i},{re:/alt_?msl/i, scale:1e-3}] },
+  { key:"altRel", label:"Altitude above launch", unit:"m", srcs:[
+      {re:/^POS_AltRel_m$/i},{re:/alt_?rel/i, scale:1e-3}] },
+  { key:"velx", label:"Velocity north", unit:"m/s", srcs:[{re:/^POS_Vx_m_s$/i},{re:/velx/i, scale:1e-2}] },
+  { key:"vely", label:"Velocity east",  unit:"m/s", srcs:[{re:/^POS_Vy_m_s$/i},{re:/vely/i, scale:1e-2}] },
+  { key:"velz", label:"Velocity down",  unit:"m/s", srcs:[{re:/^POS_Vz_m_s$/i},{re:/velz/i, scale:1e-2}] },
+  { key:"head", label:"Heading", unit:"\u00b0", srcs:[{re:/^POS_Heading_deg$/i},{re:/^VFR_Heading_deg$/i},{re:/head/i}] },
+  { key:"sats", label:"Satellites", unit:"", srcs:[{re:/^GPS_Sats$/i},{re:/sats?$/i}] },
+  { key:"fixType", label:"GPS fix", unit:"", srcs:[{re:/^GPS_FixType$/i}] },
+  { key:"hdop", label:"HDOP", unit:"", srcs:[{re:/^GPS_HDOP$/i}] },
+
+  /* ---- flight profile (v2) ---- */
+  { key:"airspeed", label:"Airspeed",    unit:"m/s", srcs:[{re:/^VFR_Airspeed_m_s$/i}] },
+  { key:"gndspeed", label:"Ground speed",unit:"m/s", srcs:[{re:/^VFR_Groundspeed_m_s$/i}] },
+  { key:"throttle", label:"Throttle",    unit:"%",   srcs:[{re:/^VFR_Throttle_pct$/i}] },
+  { key:"vfrAlt",   label:"VFR altitude",unit:"m",   srcs:[{re:/^VFR_Alt_m$/i}] },
+  { key:"vfrClimb", label:"Climb rate",  unit:"m/s", srcs:[{re:/^VFR_Climb_m_s$/i}] },
+  { key:"navAltErr",   label:"Altitude error",  unit:"m",   srcs:[{re:/^NAV_AltError_m$/i}] },
+  { key:"navAspdErr",  label:"Airspeed error",  unit:"m/s", srcs:[{re:/^NAV_AspdError_m_s$/i}] },
+  { key:"navXtrack",   label:"Cross-track error", unit:"m", srcs:[{re:/^NAV_XtrackError_m$/i}] },
+  { key:"armed",   label:"Armed",       unit:"", srcs:[{re:/^HB_Armed$/i}] },
+  { key:"mode",    label:"Flight mode", kind:"text", srcs:[{re:/^MAV_FlightMode$/i}] },
+
+  /* ---- data quality (v2) ---- */
+  { key:"vibX", label:"Vibration X", unit:"", srcs:[{re:/^VIB_X$/i}] },
+  { key:"vibY", label:"Vibration Y", unit:"", srcs:[{re:/^VIB_Y$/i}] },
+  { key:"vibZ", label:"Vibration Z", unit:"", srcs:[{re:/^VIB_Z$/i}] },
+  { key:"clip0", label:"Clipping 0", unit:"", srcs:[{re:/^VIB_Clip0$/i}] },
+  { key:"ekfVel",  label:"EKF velocity variance", unit:"", srcs:[{re:/^EKF_VelVariance$/i}] },
+  { key:"ekfPos",  label:"EKF position variance", unit:"", srcs:[{re:/^EKF_PosHorizVariance$/i}] },
+  { key:"baroT",   label:"Air temperature", unit:"\u00b0C", srcs:[{re:/^BARO_Temp_degC$/i}] },
+
+  /* ---- wind (v2) ---- */
+  { key:"windSpd", label:"Wind speed",     unit:"m/s", srcs:[{re:/^WND_Speed_m_s$/i}] },
+  { key:"windDir", label:"Wind direction", unit:"\u00b0", srcs:[{re:/^WND_Direction_deg$/i}] }
+];
+
+/* Message-staleness columns are discovered, not enumerated: any *_Age_ms. */
+const AGE_SUFFIX = /_Age_ms$/i;
+
+/* ============================ helpers ============================ */
+const $ = s => document.querySelector(s);
+const el = (t,c,h) => { const n=document.createElement(t); if(c)n.className=c; if(h!=null)n.innerHTML=h; return n; };
+const num = v => { if(v==null) return NaN; const s=String(v).trim(); if(!s||s==="nan") return NaN; const f=+s; return Number.isFinite(f)?f:NaN; };
+function fmt(v,d=1){ if(v==null||!Number.isFinite(v)) return "—"; return v.toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d}); }
+function fmtDur(s){ if(!Number.isFinite(s)) return "—"; const m=Math.floor(s/60); return `${m}:${String(Math.floor(s%60)).padStart(2,"0")}`; }
+function mean(a){ let s=0,n=0; for(const v of a) if(Number.isFinite(v)){s+=v;n++;} return n?s/n:NaN; }
+function maxOf(a){ let m=-Infinity; for(const v of a) if(Number.isFinite(v)&&v>m)m=v; return m===-Infinity?NaN:m; }
+function minOf(a){ let m=Infinity; for(const v of a) if(Number.isFinite(v)&&v<m)m=v; return m===Infinity?NaN:m; }
+function pctl(a,p){ const s=a.filter(Number.isFinite).slice().sort((x,y)=>x-y); if(!s.length) return NaN;
+  return s[Math.min(s.length-1,Math.max(0,Math.round((s.length-1)*p)))]; }
+function smooth(a,w){ const o=new Float64Array(a.length); const h=Math.floor(w/2);
+  for(let i=0;i<a.length;i++){ let s=0,n=0; for(let j=i-h;j<=i+h;j++){ if(j<0||j>=a.length) continue;
+    const v=a[j]; if(Number.isFinite(v)){s+=v;n++;} } o[i]=n?s/n:NaN; } return o; }
+function trapz(y,t){ let s=0; for(let i=1;i<y.length;i++){ const a=y[i-1],b=y[i];
+  if(Number.isFinite(a)&&Number.isFinite(b)) s+=(a+b)/2*(t[i]-t[i-1]); } return s; }
+function haversine(la1,lo1,la2,lo2){ const R=6371000,r=Math.PI/180;
+  const dla=(la2-la1)*r, dlo=(lo2-lo1)*r;
+  const h=Math.sin(dla/2)**2+Math.cos(la1*r)*Math.cos(la2*r)*Math.sin(dlo/2)**2;
+  return 2*R*Math.asin(Math.min(1,Math.sqrt(h))); }
+function normKey(s){ return String(s||"").toLowerCase().replace(/[^a-z0-9]/g,""); }
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function rampColor(t){
+  const stops=[[0.00,[18,65,78]],[0.25,[62,217,232]],[0.50,[95,214,141]],[0.75,[242,163,60]],[1.00,[255,107,107]]];
+  t=Math.max(0,Math.min(1,Number.isFinite(t)?t:0));
+  for(let i=1;i<stops.length;i++){ if(t<=stops[i][0]){ const [p0,c0]=stops[i-1],[p1,c1]=stops[i];
+    const f=(t-p0)/(p1-p0||1); return `rgb(${c0.map((c,j)=>Math.round(c+(c1[j]-c)*f)).join(",")})`; } }
+  return "rgb(255,107,107)";
+}
+
+/* ============================ parsing ============================ */
+function parseMinSec(s){
+  const m=String(s||"").trim().match(/^(\d+)\s*-\s*([\d.]+)$/);
+  if(!m) return NaN;
+  return +m[1]*60 + +m[2];
+}
+
+function parseFlight(text, filename){
+  const lines = text.split(/\r?\n/);
+  const meta = {}; let i=0;
+  for(; i<lines.length; i++){
+    const L = lines[i];
+    if(!L.trim()) continue;
+    if(L.trim()[0] !== "#") break;
+    const body = L.replace(/^#\s*/,"").trim();
+    if(/^-{2,}/.test(body)) continue;
+    const c = body.indexOf(":");
+    if(c>0) meta[body.slice(0,c).trim()] = body.slice(c+1).trim();
+  }
+  const csv = lines.slice(i).join("\n");
+  const res = Papa.parse(csv,{header:true, skipEmptyLines:"greedy",
+    transformHeader:h=>h.trim(), transform:v=>typeof v==="string"?v.trim():v});
+  const rows = res.data.filter(r=>r && Object.keys(r).length>1);
+  if(!rows.length) throw new Error("No data rows found under the header.");
+  const headers = res.meta.fields.map(h=>h.trim());
+
+  // resolve signals -> columns, remembering each one's unit scale
+  const cols = {}, scales = {};
+  for(const sig of SIGNALS){
+    for(const src of sig.srcs){
+      const hit = headers.find(h=>src.re.test(h));
+      if(hit){ cols[sig.key]=hit; scales[sig.key]=src.scale ?? 1; break; }
+    }
+  }
+
+  const n = rows.length;
+  const S = {};
+  for(const sig of SIGNALS){
+    const col = cols[sig.key]; if(!col) continue;
+    if(sig.kind==="text"){ S[sig.key]=rows.map(r=>r[col]); continue; }
+    if(sig.kind==="bool"){ S[sig.key]=rows.map(r=>/^(true|1|yes)$/i.test(String(r[col]||""))); continue; }
+    const mul = scales[sig.key] ?? 1;
+    const a=new Float64Array(n);
+    for(let k=0;k<n;k++){ const v=num(rows[k][col]); a[k]= Number.isFinite(v) ? v*mul : NaN; }
+    S[sig.key]=a;
+  }
+
+  /* Staleness columns are discovered from the header rather than listed, so a
+     new message group in the logger shows up here without a code change. */
+  const ageCols = headers.filter(h=>AGE_SUFFIX.test(h));
+  const ages = {};
+  for(const h of ageCols){
+    const a=new Float64Array(n);
+    for(let k=0;k<n;k++) a[k]=num(rows[k][h]);
+    ages[h.replace(AGE_SUFFIX,"")] = a;
+  }
+  const schemaV2 = !!(cols.schedUtc || cols.elapsed || ageCols.length);
+
+  /* Time base, best source first. v2 logs carry Elapsed_s, which is the loop's
+     own grid (start + k x period) and therefore exact -- no parsing, no drift,
+     no rollover to unwrap. */
+  let t=new Float64Array(n), tSource="Min-Sec column";
+  if(S.elapsed && Array.from(S.elapsed).some(Number.isFinite)){
+    tSource="Elapsed_s (scheduled grid)";
+    for(let k=0;k<n;k++) t[k]=S.elapsed[k];
+  } else if(S.schedUtc){
+    tSource="Sched_UTC column";
+    for(let k=0;k<n;k++){ const d=Date.parse(String(S.schedUtc[k])); t[k]=Number.isFinite(d)?d/1000:NaN; }
+  } else if(S.hostUtc){
+    tSource="Host_UTC column";
+    for(let k=0;k<n;k++){ const d=Date.parse(String(S.hostUtc[k])); t[k]=Number.isFinite(d)?d/1000:NaN; }
+  } else if(S.minsec){
+    let prev=NaN, off=0;
+    for(let k=0;k<n;k++){
+      let v=parseMinSec(S.minsec[k]);
+      if(Number.isFinite(prev) && Number.isFinite(v) && v+off < prev-30) off += 3600; // minute rollover
+      t[k]=Number.isFinite(v)?v+off:NaN;
+      if(Number.isFinite(t[k])) prev=t[k];
+    }
+  } else if(S.gpsutc){
+    tSource="GPS_UTC column";
+    for(let k=0;k<n;k++){ const d=Date.parse(String(S.gpsutc[k]).replace(" ","T")+"Z"); t[k]=Number.isFinite(d)?d/1000:NaN; }
+  } else { tSource="assumed 10 Hz"; for(let k=0;k<n;k++) t[k]=k/10; }
+  const t0 = t.find(Number.isFinite) ?? 0;
+  for(let k=0;k<n;k++) t[k]=t[k]-t0;
+  for(let k=1;k<n;k++) if(!Number.isFinite(t[k])) t[k]=t[k-1];   // hold through gaps
+
+  /* derived series */
+  /* Everything reached S in SI units already, so these are plain reads. */
+  const alt = new Float64Array(n);         // m above launch
+  const altSrc = S.altRel ? "altRel" : (S.altMsl ? "altMsl" : (S.vfrAlt ? "vfrAlt" : null));
+  if(altSrc){
+    const src=S[altSrc];
+    const base = (altSrc==="altRel") ? 0 : (Array.from(src).find(Number.isFinite) || 0);
+    for(let k=0;k<n;k++) alt[k]=src[k]-base;
+  } else alt.fill(NaN);
+
+  const speed=new Float64Array(n);
+  if(S.gndspeed && Array.from(S.gndspeed).some(Number.isFinite)){
+    for(let k=0;k<n;k++) speed[k]=S.gndspeed[k];
+  } else if(S.velx&&S.vely){
+    for(let k=0;k<n;k++) speed[k]=Math.hypot(S.velx[k],S.vely[k]);
+  } else speed.fill(NaN);
+
+  const altS = smooth(alt,9);
+  const climb=new Float64Array(n);
+  for(let k=0;k<n;k++){ const a=Math.max(0,k-4), b=Math.min(n-1,k+4), dt=t[b]-t[a];
+    climb[k]= dt>0 ? (altS[b]-altS[a])/dt : 0; }
+
+  const deg = a => { if(!a) return null; const o=new Float64Array(n); for(let k=0;k<n;k++) o[k]=a[k]*180/Math.PI; return o; };
+  const rollD=deg(S.roll), pitchD=deg(S.pitch), yawD=deg(S.yaw);
+
+  /* ---- independent power measurement channels ----
+     The Pi logs two of them. They can disagree, so both are kept and the
+     researcher picks which one drives the energy numbers. */
+  const mkChannel=(key,label,V,I,W,wCol)=>{
+    let w=W, src = wCol ? wCol : "V × I";
+    if(!w && V && I){ w=new Float64Array(n); for(let k=0;k<n;k++) w[k]=V[k]*I[k]; src="V × I"; }
+    if(!w || !Array.from(w).some(Number.isFinite)) return null;
+    const cum=new Float64Array(n); let acc=0;
+    for(let k=1;k<n;k++){ const a=w[k-1],b=w[k];
+      if(Number.isFinite(a)&&Number.isFinite(b)) acc+=(a+b)/2*(t[k]-t[k-1])/3600; cum[k]=acc; }
+    const mAh = I ? trapz(Array.from(I,v=>Math.abs(v)), Array.from(t))/3.6 : NaN;
+    const meanV = V?mean(V):NaN;
+    return { key,label,V,I,W:w,cum,mAh,src,meanV,meanW:mean(w),
+      cellsImplied: Number.isFinite(meanV) ? Math.max(1,Math.round(meanV/3.75)) : null };
+  };
+  /* Three independent power measurements now, not two:
+       adc  - the onboard ADS1115 shunt and divider
+       bat  - BATTERY_STATUS from the autopilot's power module
+       sys  - SYS_STATUS, a separate field the autopilot also publishes
+     They can disagree, and which one you believe changes every energy number,
+     so all three are kept and cross-checked rather than silently merged. */
+  const channels={};
+  const chAdc = mkChannel("adc","Onboard ADC",S.adcV,S.adcI,S.adcW,cols.adcW);
+  if(chAdc) channels.adc=chAdc;
+  const chBat = mkChannel("bat","Autopilot battery",S.batV,S.batI,S.batW,cols.batW);
+  if(chBat) channels.bat=chBat;
+  const chSys = mkChannel("sys","SYS_STATUS",S.sysV,S.sysI,null,null);
+  if(chSys) channels.sys=chSys;
+  /* Prefer the autopilot's calibrated power module over the raw shunt. */
+  const activeChannel = channels.bat ? "bat" : (channels.adc ? "adc"
+                        : (channels.sys ? "sys" : null));
+  const nanArr=()=>{ const a=new Float64Array(n); a.fill(NaN); return a; };
+  const act = activeChannel ? channels[activeChannel] : null;
+  const power = act ? act.W : nanArr();
+  const cumWh = act ? act.cum : nanArr();
+  const powerSrc = act ? `${act.label} · ${act.src}` : "unavailable";
+
+  // ground track distance
+  let dist=0; const distCum=new Float64Array(n);
+  if(S.lat&&S.lon){ let pi=-1;
+    for(let k=0;k<n;k++){
+      if(Number.isFinite(S.lat[k])&&Number.isFinite(S.lon[k])&&Math.abs(S.lat[k])>0.0001){
+        if(pi>=0){ const d=haversine(S.lat[pi],S.lon[pi],S.lat[k],S.lon[k]); if(d<200) dist+=d; }
+        pi=k;
+      }
+      distCum[k]=dist;
+    }
+  }
+
+  /* v2 headers carry `platform` (TAROT_X6) and `platform_label`; legacy ones
+     carry Platform_Type. Feed the matcher all of them plus the filename. */
+  const platform = matchPlatform(
+    [meta.platform, meta.platform_label, meta.Platform_Type, meta.Platform].filter(Boolean).join(" "),
+    filename);
+
+  const f = {
+    id: "f"+Math.random().toString(36).slice(2,9),
+    filename, meta, headers, cols, scales, ages, schemaV2, rows:n, t, S, alt, altSrc, speed, climb,
+    rollD, pitchD, yawD, power, powerSrc, cumWh, dist, distCum, tSource,
+    channels, activeChannel,
+    volt: act ? act.V : null, curr: act ? act.I : null,
+    platform, platformAuto: platform.id,
+    massKg: platform.massKg, packWh: platform.packWh
+  };
+  f.stats = computeStats(f);
+  f.phases = computePhases(f);
+  f.checks = runChecks(f);
+  return f;
+}
+
+function applyChannel(f, key){
+  const ch = f.channels[key];
+  if(!ch) return;
+  f.activeChannel = key;
+  f.power = ch.W; f.cumWh = ch.cum; f.volt = ch.V; f.curr = ch.I;
+  f.powerSrc = `${ch.label} · ${ch.src}`;
+  f.stats = computeStats(f);
+  f.phases = computePhases(f);
+  f.checks = runChecks(f);
+}
+
+function matchPlatform(metaType, filename){
+  const hay = normKey((metaType||"") + " " + (filename||""));
+  let best=null, bestLen=0;
+  for(const p of PLATFORMS){
+    for(const a of p.aliases){
+      const k=normKey(a);
+      if(k && hay.includes(k) && k.length>bestLen){ best=p; bestLen=k.length; }
+    }
+  }
+  return best || UNKNOWN_PLATFORM;
+}
+
+function computeStats(f){
+  const {t,S,power,alt,speed,cumWh} = f;
+  const n=f.rows;
+  const dur = t[n-1]-t[0];
+  const dts=[]; for(let k=1;k<n;k++){ const d=t[k]-t[k-1]; if(d>0) dts.push(d); }
+  dts.sort((a,b)=>a-b);
+  const medDt = dts.length ? dts[Math.floor(dts.length/2)] : NaN;
+
+  const energyWh = cumWh[n-1];
+  const meanP = mean(power), peakP = maxOf(power);
+  const ch = f.activeChannel ? f.channels[f.activeChannel] : null;
+  const cellsImplied = ch ? ch.cellsImplied : null;
+  const cells = cellsImplied || f.platform.cells;
+  const V = f.volt, I = f.curr;
+  const minV = V ? minOf(V) : NaN;
+  const meanV = V ? mean(V) : NaN;
+  const startV = V ? (Array.from(V.slice(0,20)).filter(Number.isFinite)[0] ?? NaN) : NaN;
+
+  const mAh = ch ? ch.mAh : NaN;
+  const mAhLogged = S.consumed ? (maxOf(S.consumed)-minOf(S.consumed)) : NaN;
+
+  const packWh = Number.isFinite(f.packWh) ? f.packWh : f.platform.packWh;
+  const mass = f.massKg;
+  const endurMin = (Number.isFinite(packWh)&&Number.isFinite(meanP)&&meanP>0) ? packWh/meanP*60 : NaN;
+
+  return {
+    dur, durMin:dur/60, medDt, rateHz: medDt>0?1/medDt:NaN,
+    energyWh, meanPower:meanP, peakPower:peakP,
+    whPerMin: dur>0 ? energyWh/(dur/60) : NaN,
+    wPerKg: Number.isFinite(mass)&&mass>0 ? meanP/mass : NaN,
+    whPerKm: f.dist>10 ? energyWh/(f.dist/1000) : NaN,
+    maxAlt: maxOf(alt), maxClimb: maxOf(f.climb), maxDescent: minOf(f.climb),
+    maxSpeed: maxOf(speed), meanSpeed: mean(speed),
+    dist: f.dist, minV, meanV, startV, cells, cellsImplied,
+    minVcell: (Number.isFinite(minV)&&cells) ? minV/cells : NaN,
+    sag: (Number.isFinite(startV)&&Number.isFinite(minV)) ? startV-minV : NaN,
+    meanCurr: I?mean(I):NaN, peakCurr: I?maxOf(I):NaN,
+    tempStart: S.temp?(Array.from(S.temp.slice(0,20)).filter(Number.isFinite)[0]??NaN):NaN,
+    tempMax: S.temp?maxOf(S.temp):NaN,
+    mAhIntegrated: mAh, mAhLogged,
+    pctStart: S.pct?maxOf(S.pct):NaN, pctEnd: S.pct?minOf(S.pct):NaN,
+    endurMin, packWh, mass,
+    gpsSyncPct: S.synced ? S.synced.filter(Boolean).length/n*100 : NaN,
+    satsMin: S.sats?minOf(S.sats):NaN,
+
+    /* ---- v2 additions ---- */
+    schemaV2: f.schemaV2,
+    // loop timing, measured by the logger itself rather than inferred
+    schedErrP95: S.schedErr ? pctl(Array.from(S.schedErr,Math.abs),0.95) : NaN,
+    schedErrMax: S.schedErr ? maxOf(Array.from(S.schedErr,Math.abs)) : NaN,
+    cycleP95: S.cycleMs ? pctl(Array.from(S.cycleMs),0.95) : NaN,
+    slotsSkipped: S.skipped ? Array.from(S.skipped).reduce((a,b)=>a+(Number.isFinite(b)?b:0),0) : NaN,
+    // energy the autopilot counted itself, independent of our integration
+    energyWhLogged: S.energyHj ? (maxOf(S.energyHj)-minOf(S.energyHj))*100/3600 : NaN,
+    // flight profile
+    airspeedMean: S.airspeed?mean(S.airspeed):NaN, airspeedMax: S.airspeed?maxOf(S.airspeed):NaN,
+    throttleMean: S.throttle?mean(S.throttle):NaN, throttleMax: S.throttle?maxOf(S.throttle):NaN,
+    navAltErrP95: S.navAltErr?pctl(Array.from(S.navAltErr,Math.abs),0.95):NaN,
+    navXtrackP95: S.navXtrack?pctl(Array.from(S.navXtrack,Math.abs),0.95):NaN,
+    // quality
+    vibPeak: (S.vibX||S.vibZ) ? Math.max(S.vibX?maxOf(S.vibX):0, S.vibY?maxOf(S.vibY):0,
+                                         S.vibZ?maxOf(S.vibZ):0) : NaN,
+    clipEvents: S.clip0?maxOf(S.clip0):NaN,
+    ekfPosMax: S.ekfPos?maxOf(S.ekfPos):NaN,
+    vccMin: S.vcc?minOf(S.vcc):NaN, vccMean: S.vcc?mean(S.vcc):NaN,
+    linkErrors: S.sysErr?maxOf(S.sysErr):NaN,
+    cpuLoadMax: S.sysLoad?maxOf(S.sysLoad):NaN,
+    // wind
+    windMean: S.windSpd?mean(S.windSpd):NaN, windMax: S.windSpd?maxOf(S.windSpd):NaN,
+    // armed time is the honest denominator for a sortie
+    armedPct: S.armed ? Array.from(S.armed).filter(v=>v===1).length/n*100 : NaN,
+    // worst staleness across every message group
+    staleWorst: (()=>{ let w=NaN,name="";
+      for(const [k,a] of Object.entries(f.ages||{})){
+        const q=pctl(Array.from(a),0.95);
+        if(Number.isFinite(q) && (!Number.isFinite(w)||q>w)){ w=q; name=k; } }
+      return {ms:w, name}; })(),
+    channelSpread: (()=>{ const wp=worstChannelPair(f);
+      return wp ? Math.max(wp.r,1/wp.r) : NaN; })()
+  };
+}
+
+const PHASE_DEFS = [
+  { id:"ground",  name:"Ground",  color:"#55697A" },
+  { id:"climb",   name:"Climb",   color:C.amber },
+  { id:"hover",   name:"Hover",   color:C.cyan },
+  { id:"cruise",  name:"Cruise",  color:C.green },
+  { id:"descent", name:"Descent", color:C.violet }
+];
+function classify(f,k){
+  const a=f.alt[k], c=f.climb[k], s=f.speed[k];
+  if(!Number.isFinite(a)) return "cruise";
+  if(a < 1.0) return "ground";
+  if(Number.isFinite(c) && c > 0.4) return "climb";
+  if(Number.isFinite(c) && c < -0.4) return "descent";
+  if(Number.isFinite(s) && s < 1.0) return "hover";
+  return "cruise";
+}
+function computePhases(f){
+  const n=f.rows, lab=new Array(n);
+  for(let k=0;k<n;k++) lab[k]=classify(f,k);
+  const out={};
+  for(const p of PHASE_DEFS) out[p.id]={...p, time:0, energyWh:0, powers:[], alts:[]};
+  for(let k=1;k<n;k++){
+    const dt=f.t[k]-f.t[k-1]; if(!(dt>0)||dt>5) continue;
+    const b=out[lab[k]];
+    b.time+=dt;
+    const p0=f.power[k-1],p1=f.power[k];
+    if(Number.isFinite(p0)&&Number.isFinite(p1)) b.energyWh += (p0+p1)/2*dt/3600;
+    if(Number.isFinite(f.power[k])) b.powers.push(f.power[k]);
+    if(Number.isFinite(f.alt[k])) b.alts.push(f.alt[k]);
+  }
+  const list = PHASE_DEFS.map(p=>{
+    const b=out[p.id];
+    return {...p, time:b.time, energyWh:b.energyWh,
+      meanPower:mean(b.powers), peakPower:maxOf(b.powers), meanAlt:mean(b.alts)};
+  }).filter(p=>p.time>0.4);
+  return { labels:lab, list };
+}
+
+/* ============================ health checks ============================ */
+/* With three power channels the interesting question is not "do A and B match"
+   but "which pair disagrees worst". Returns the worst pair, or null. */
+function worstChannelPair(f){
+  const ks=Object.keys(f.channels).filter(k=>Number.isFinite(f.channels[k].meanW)
+                                             && f.channels[k].meanW>1);
+  let worst=null;
+  for(let i=0;i<ks.length;i++) for(let j=i+1;j<ks.length;j++){
+    const a=f.channels[ks[i]], b=f.channels[ks[j]];
+    const r=a.meanW/b.meanW, dev=Math.abs(Math.log(r));
+    if(!worst || dev>worst.dev) worst={a,b,r,dev};
+  }
+  return worst;
+}
+
+function runChecks(f){
+  const st=f.stats, S=f.S, out=[];
+  const add=(level,title,detail)=>out.push({level,title,detail});
+
+  // 1 the power channels against each other — the headline check
+  const wp = worstChannelPair(f);
+  if(wp){
+    const nch=Object.keys(f.channels).length;
+    if(wp.r>1.15||wp.r<0.87){
+      const ea=wp.a.cum[f.rows-1], eb=wp.b.cum[f.rows-1];
+      add("fail","Power channels disagree",
+        `${esc(wp.a.label)} averages ${fmt(wp.a.meanW,0)} W while ${esc(wp.b.label)} averages ${fmt(wp.b.meanW,0)} W over the same flight — a factor of ${fmt(Math.max(wp.r,1/wp.r),2)}. That is ${fmt(ea,1)} Wh versus ${fmt(eb,1)} Wh, so every energy figure depends on which is believed. Each channel is internally consistent, which points at a scale factor or sense-resistor value rather than noise. Resolve it against a bench load, and use the channel selector to see each one.`);
+    } else add("pass",`${nch} power channels agree`,
+      `Worst pair: ${esc(wp.a.label)} ${fmt(wp.a.meanW,0)} W vs ${esc(wp.b.label)} ${fmt(wp.b.meanW,0)} W (ratio ${fmt(wp.r,2)}).`);
+  }
+
+  /* ---- v2 checks: these only exist because the new logger records them ---- */
+  if(f.schemaV2){
+    // loop timing, straight from the log's own scheduling error
+    if(S.schedErr){
+      const errs=Array.from(S.schedErr,Math.abs).filter(Number.isFinite);
+      const p95=pctl(errs,0.95), mx=maxOf(errs);
+      const skipped = S.skipped ? Array.from(S.skipped).reduce((a,b)=>a+(Number.isFinite(b)?b:0),0) : 0;
+      if(p95<=5 && !skipped)
+        add("pass","Sample cadence held",
+          `Scheduling error p95 ${fmt(p95,2)} ms, worst ${fmt(mx,2)} ms, no slots skipped. The loop kept its grid.`);
+      else if(p95<=20)
+        add("warn","Minor cadence wander",
+          `Scheduling error p95 ${fmt(p95,2)} ms (worst ${fmt(mx,2)} ms), ${skipped} slot${skipped===1?"":"s"} skipped.`);
+      else
+        add("fail","Sample cadence not held",
+          `Scheduling error p95 ${fmt(p95,1)} ms, worst ${fmt(mx,1)} ms, ${skipped} slots skipped. Timestamps are still correct, but the sample rate is not what was requested.`);
+    }
+    if(S.cycleMs && Number.isFinite(st.medDt)){
+      const budget=st.medDt*1000, p95=pctl(Array.from(S.cycleMs),0.95);
+      if(Number.isFinite(p95) && p95 > budget*0.85)
+        add("warn","Cycle time close to the budget",
+          `Reads take ${fmt(p95,0)} ms at p95 against a ${fmt(budget,0)} ms period. Lower --temp-hz or the sample rate before adding anything else to the loop.`);
+    }
+    // brownouts on the rails corrupt everything else in the row
+    if(S.vcc){
+      const lo=minOf(S.vcc), av=mean(S.vcc);
+      if(Number.isFinite(lo) && lo < 4.6)
+        add("fail","5 V rail dipped",
+          `PWR_Vcc fell to ${fmt(lo,2)} V (mean ${fmt(av,2)} V). Below about 4.6 V the autopilot's sensors are unreliable, so treat samples around that dip with suspicion.`);
+      else if(Number.isFinite(av))
+        add("pass","Power rails steady",`5 V rail held at ${fmt(av,2)} V, minimum ${fmt(lo,2)} V.`);
+    }
+    // vibration and clipping decide whether the IMU data means anything
+    if(S.vibX||S.vibZ){
+      const vz=S.vibZ?maxOf(S.vibZ):NaN, vx=S.vibX?maxOf(S.vibX):NaN;
+      const worst=Math.max(Number.isFinite(vx)?vx:0, Number.isFinite(vz)?vz:0);
+      const clip=S.clip0?maxOf(S.clip0):0;
+      if(clip>0)
+        add("fail","Accelerometer clipping",
+          `${fmt(clip,0)} clipping events. The IMU saturated, so attitude and any acceleration-derived quantity are unreliable for this flight.`);
+      else if(worst>30)
+        add("warn","High vibration",
+          `Peak vibration ${fmt(worst,1)} (ArduPilot treats above 30 as marginal, 60 as bad). Check mounting before trusting IMU-derived results.`);
+      else if(Number.isFinite(worst))
+        add("pass","Vibration within limits",`Peak ${fmt(worst,1)}, no clipping.`);
+    }
+    // estimator health
+    if(S.ekfPos){
+      const mx=maxOf(S.ekfPos);
+      if(Number.isFinite(mx))
+        (mx<0.5 ? add("pass","EKF healthy",`Peak horizontal position variance ${fmt(mx,3)}.`)
+                : add("warn","EKF variance elevated",`Peak horizontal position variance ${fmt(mx,3)} — position data is degraded where this is high.`));
+    }
+    // telemetry link quality
+    if(S.sysErr){
+      const errs=maxOf(S.sysErr), drop=S.sysDrop?maxOf(S.sysDrop):NaN;
+      if(Number.isFinite(errs) && errs>0)
+        add("warn","Telemetry link errors",
+          `${fmt(errs,0)} comm errors reported, peak drop rate ${fmt(drop,2)}%. Some messages did not arrive, so gaps in this file may be link loss rather than sensor failure.`);
+      else if(Number.isFinite(errs))
+        add("pass","Telemetry link clean",`No comm errors reported.`);
+    }
+    // staleness: a held value is not a measurement
+    const stale=[];
+    for(const [name,arr] of Object.entries(f.ages||{})){
+      const p95=pctl(Array.from(arr),0.95);
+      if(Number.isFinite(p95) && p95 > 1000) stale.push(`${name} ${fmt(p95/1000,1)} s`);
+    }
+    if(stale.length)
+      add("warn","Some measurements are stale",
+        `At p95 these were older than a second when written: ${stale.slice(0,8).join(", ")}. The values are real but held, not sampled fresh — check the *_Age_ms columns before using them at full rate.`);
+    else if(Object.keys(f.ages||{}).length)
+      add("pass","Measurements are fresh",
+        `Every message group stayed under 1 s old at p95 across ${Object.keys(f.ages).length} groups.`);
+    /* The autopilot counts energy itself. Comparing that against our
+       integration of V x I is a genuine independent check of the power
+       channel -- if they disagree, one of the two is wrong and every Wh
+       figure downstream inherits it. */
+    if(Number.isFinite(st.energyWhLogged) && st.energyWhLogged>0.5 && Number.isFinite(st.energyWh)){
+      const r = st.energyWh / st.energyWhLogged;
+      if(r>1.10 || r<0.91)
+        add("fail","Energy integration disagrees with the autopilot's counter",
+          `Integrating the ${esc(f.channels[f.activeChannel]?f.channels[f.activeChannel].label:"active channel")} gives ${fmt(st.energyWh,2)} Wh, but the autopilot's own BAT_Energy_hJ counter reports ${fmt(st.energyWhLogged,2)} Wh over the same flight — ${fmt(Math.abs(r-1)*100,0)}% apart. One of the two is wrong, and every Wh and Wh/min figure here depends on which.`);
+      else
+        add("pass","Energy matches the autopilot's own counter",
+          `${fmt(st.energyWh,2)} Wh integrated against ${fmt(st.energyWhLogged,2)} Wh counted onboard (${fmt(r,3)}x).`);
+    }
+    // profile adherence, from the autopilot's own error terms
+    if(S.navAltErr){
+      const p95=pctl(Array.from(S.navAltErr,Math.abs),0.95);
+      if(Number.isFinite(p95))
+        (p95<3 ? add("pass","Held the commanded altitude",`Altitude error p95 ${fmt(p95,2)} m.`)
+               : add("warn","Altitude error elevated",`Altitude error p95 ${fmt(p95,1)} m against the commanded profile.`));
+    }
+  }
+  // 2 implied cell count vs the airframe sheet
+  if(Number.isFinite(st.cellsImplied)&&f.platform.cells&&st.cellsImplied!==f.platform.cells)
+    add("warn","Measured voltage implies a different pack",
+      `The active channel averages ${fmt(st.meanV,2)} V, which is ${st.cellsImplied}S at ${fmt(st.meanV/st.cellsImplied,2)} V per cell. The platform sheet lists ${f.platform.cells}S for the ${f.platform.name}. Per-cell figures here use the measured ${st.cellsImplied}S.`);
+  // 3 coulomb consistency, per channel
+  if(Number.isFinite(st.mAhLogged)&&st.mAhLogged>1){
+    const cands=[];
+    for(const k of ["adc","bat","sys"]){ const c=f.channels[k];
+      if(c&&Number.isFinite(c.mAh)) cands.push({c, r:c.mAh/st.mAhLogged}); }
+    const best=cands.slice().sort((a,b)=>Math.abs(Math.log(a.r))-Math.abs(Math.log(b.r)))[0];
+    if(best){
+      const detail=cands.map(x=>`${x.c.label} ${fmt(x.c.mAh,0)} mAh (×${fmt(x.r,2)})`).join(", ");
+      if(Math.abs(Math.log(best.r))<0.22)
+        add("pass","Charge counter matches a current channel",
+          `The logger reported ${fmt(st.mAhLogged,0)} mAh consumed. Integrating current gives ${detail}. The ${best.c.label} is the one the counter is derived from.`);
+      else add("fail","Charge counter matches neither channel",
+        `Logged ${fmt(st.mAhLogged,0)} mAh against ${detail}.`);
+    }
+  }
+  // 4 power identity within the active channel
+  if(f.volt&&f.curr&&f.power){
+    let se=0,nn=0;
+    for(let k=0;k<f.rows;k++){ const p=f.power[k], q=f.volt[k]*f.curr[k];
+      if(Number.isFinite(p)&&Number.isFinite(q)&&q>1){ se+=Math.abs(p-q)/q; nn++; } }
+    const e=nn?se/nn*100:NaN;
+    if(Number.isFinite(e)) (e<5?add("pass","Active channel is internally consistent",`Logged power is within ${fmt(e,1)}% of V × I.`)
+      :add("warn","Power drifts from V × I",`Mean deviation ${fmt(e,1)}% — the power field may be filtered or sampled at a different instant than voltage and current.`));
+  }
+  // 4 GPS
+  if(Number.isFinite(st.gpsSyncPct)){
+    st.gpsSyncPct>99 ? add("pass","GPS time sync held", `Synced on ${fmt(st.gpsSyncPct,1)}% of samples, minimum ${fmt(st.satsMin,0)} satellites.`)
+      : add("warn","GPS sync dropped", `Only ${fmt(st.gpsSyncPct,1)}% of samples were time-synced.`);
+  }
+  if(Number.isFinite(st.satsMin) && st.satsMin>24)
+    add("warn","Satellite count looks saturated",
+      `Minimum reported count is ${fmt(st.satsMin,0)}, constant across the log. Values above about 24 usually mean the field is a bitmask or a fixed placeholder rather than a live count.`);
+  // 5 timing
+  if(Number.isFinite(st.medDt)){
+    let gaps=0; for(let k=1;k<f.rows;k++){ const d=f.t[k]-f.t[k-1]; if(d>3*st.medDt) gaps++; }
+    gaps===0 ? add("pass","Sampling is regular",`Median interval ${fmt(st.medDt*1000,0)} ms (${fmt(st.rateHz,1)} Hz), no dropouts.`)
+      : add("warn","Sampling gaps present",`${gaps} interval${gaps>1?"s":""} longer than 3× the median of ${fmt(st.medDt*1000,0)} ms.`);
+  }
+  // 6 duplicate timestamps
+  if(S.gpsutc){
+    let dup=0; for(let k=1;k<f.rows;k++) if(S.gpsutc[k]===S.gpsutc[k-1]) dup++;
+    if(dup>f.rows*0.1) add("warn","Repeated GPS timestamps",
+      `${fmt(dup/f.rows*100,0)}% of rows repeat the previous GPS time. The logger is sampling faster than the GPS updates, so GPS-derived rates are quantised.`);
+  }
+  // 7 altitude
+  if(Number.isFinite(st.maxAlt)){
+    st.maxAlt<1 ? add("warn","No altitude change recorded",`Peak height above launch is ${fmt(st.maxAlt,2)} m — this log may be a bench run.`)
+      : add("pass","Altitude profile present",`Peak ${fmt(st.maxAlt,1)} m above launch, climb to ${fmt(st.maxClimb,1)} m/s.`);
+  }
+  // 8 raw velocity units (legacy logs only)
+  if(S.rawVel && !f.schemaV2){
+    const mx=maxOf(S.rawVel);
+    if(Number.isFinite(mx)&&mx>60) add("warn","Raw GPS speed unit is suspect",
+      `Peak value ${fmt(mx,0)} with a label of m/s. That is ${fmt(mx*3.6,0)} km/h — almost certainly centimetres per second. Ground speed here is computed from the fused velocity components instead.`);
+  }
+  // 9 cell voltage
+  if(Number.isFinite(st.minVcell)){
+    st.minVcell<3.3 ? add("fail","Pack driven below 3.3 V/cell",
+      `Minimum ${fmt(st.minVcell,2)} V per cell across ${st.cells}S. Repeated discharges this deep will shorten pack life and skew endurance comparisons.`)
+      : add("pass","Cell voltage stayed in range",`Minimum ${fmt(st.minVcell,2)} V/cell, sag ${fmt(st.sag,2)} V.`);
+  }
+  // 10 pack energy plausibility
+  if(Number.isFinite(st.packWh)&&Number.isFinite(st.energyWh)&&st.energyWh>st.packWh)
+    add("fail","Energy used exceeds the rated pack",
+      `${fmt(st.energyWh,1)} Wh drawn against a sheet rating of ${fmt(st.packWh,1)} Wh. Either a different pack was flown or the current scale factor is wrong.`);
+  // 11 missing data
+  let miss=0,tot=0;
+  for(const sig of SIGNALS){ const a=f.S[sig.key]; if(!a||sig.kind) continue;
+    for(let k=0;k<a.length;k++){ tot++; if(!Number.isFinite(a[k])) miss++; } }
+  if(tot) (miss/tot<0.001 ? add("pass","Numeric fields are complete",`${fmt(miss/tot*100,2)}% of numeric cells are blank or non-numeric.`)
+    : add("warn","Gaps in numeric fields",`${fmt(miss/tot*100,2)}% of numeric cells could not be parsed.`));
+
+  return out;
+}
+
+/* ============================ state ============================ */
+const state = { flights:[], active:null, charts:[], map:null, mapLayer:null, mapMarker:null,
+  xRange:null, cursorIdx:null, hist:null };
+
+/* ============================ charts ============================ */
+const CHART_DEFS = [
+  { title:"Battery power & current", h:200, series:[
+      {k:"power", label:"Power", unit:"W", color:C.amber, scale:"W", from:f=>f.power},
+      {k:"curr",  label:"Current", unit:"A", color:C.cyan, scale:"A", from:f=>f.curr}] },
+  { title:"Pack voltage & charge remaining", h:200, series:[
+      {k:"volt", label:"Voltage", unit:"V", color:C.green, scale:"V", from:f=>f.volt},
+      {k:"pct",  label:"Remaining", unit:"%", color:C.dim, scale:"%", from:f=>f.S.pct}] },
+  { title:"Altitude above launch & climb rate", h:200, series:[
+      {k:"alt",   label:"Altitude", unit:"m", color:C.cyan, scale:"m", from:f=>f.alt, fill:"rgba(62,217,232,0.09)"},
+      {k:"climb", label:"Climb rate", unit:"m/s", color:C.magenta, scale:"m/s", from:f=>f.climb}] },
+  { title:"Ground speed", h:190, series:[
+      {k:"speed", label:"Ground speed", unit:"m/s", color:C.green, scale:"m/s", from:f=>f.speed, fill:"rgba(95,214,141,0.08)"}] },
+  { title:"Cumulative energy", h:190, series:[
+      {k:"cumWh", label:"Energy", unit:"Wh", color:C.amber, scale:"Wh", from:f=>f.cumWh, fill:"rgba(242,163,60,0.10)"},
+      {k:"consumed", label:"Logged charge", unit:"mAh", color:C.dim, scale:"mAh", from:f=>f.S.consumed}] },
+  { title:"Attitude", h:200, series:[
+      {k:"roll",  label:"Roll", unit:"°", color:C.cyan, scale:"deg", from:f=>f.rollD},
+      {k:"pitch", label:"Pitch", unit:"°", color:C.amber, scale:"deg", from:f=>f.pitchD},
+      {k:"yaw",   label:"Yaw", unit:"°", color:C.violet, scale:"deg", from:f=>f.yawD}] },
+  { title:"Body acceleration", h:190, series:[
+      {k:"ax", label:"X", unit:"cm/s²", color:C.cyan, scale:"a", from:f=>f.S.ax},
+      {k:"ay", label:"Y", unit:"cm/s²", color:C.green, scale:"a", from:f=>f.S.ay},
+      {k:"az", label:"Z", unit:"cm/s²", color:C.magenta, scale:"a", from:f=>f.S.az}] },
+  { title:"Battery temperature", h:180, series:[
+      {k:"temp", label:"Temperature", unit:"°C", color:C.red, scale:"T", from:f=>f.S.temp}] },
+  { title:"Power channels side by side", h:200, when:f=>Object.keys(f.channels).length>1, series:[
+      {k:"chAdc", label:"Onboard ADC", unit:"W", color:C.cyan, scale:"W",
+        from:f=>f.channels.adc?f.channels.adc.W:null},
+      {k:"chBat", label:"Autopilot battery", unit:"W", color:C.amber, scale:"W",
+        from:f=>f.channels.bat?f.channels.bat.W:null},
+      {k:"chSys", label:"SYS_STATUS", unit:"W", color:C.violet, scale:"W",
+        from:f=>f.channels.sys?f.channels.sys.W:null}] },
+  { title:"Channel voltages", h:180, when:f=>Object.keys(f.channels).length>1, series:[
+      {k:"vAdc", label:"Onboard ADC", unit:"V", color:C.cyan, scale:"V",
+        from:f=>f.channels.adc?f.channels.adc.V:null},
+      {k:"vBat", label:"Autopilot battery", unit:"V", color:C.amber, scale:"V",
+        from:f=>f.channels.bat?f.channels.bat.V:null},
+      {k:"vSys", label:"SYS_STATUS", unit:"V", color:C.violet, scale:"V",
+        from:f=>f.channels.sys?f.channels.sys.V:null}] },
+
+  /* ---- v2-only charts ---- */
+  { title:"Airspeed, ground speed & throttle", h:210, when:f=>f.S.throttle||f.S.airspeed, series:[
+      {k:"as", label:"Airspeed", unit:"m/s", color:C.cyan, scale:"spd", from:f=>f.S.airspeed},
+      {k:"gs", label:"Ground speed", unit:"m/s", color:C.green, scale:"spd", from:f=>f.S.gndspeed},
+      {k:"thr", label:"Throttle", unit:"%", color:C.amber, scale:"pct", from:f=>f.S.throttle}] },
+  { title:"Deviation from the commanded profile", h:190, when:f=>f.S.navAltErr||f.S.navXtrack, series:[
+      {k:"ae", label:"Altitude error", unit:"m", color:C.amber, scale:"m", from:f=>f.S.navAltErr},
+      {k:"xt", label:"Cross-track error", unit:"m", color:C.magenta, scale:"m", from:f=>f.S.navXtrack},
+      {k:"se", label:"Airspeed error", unit:"m/s", color:C.cyan, scale:"ms", from:f=>f.S.navAspdErr}] },
+  { title:"Vibration", h:180, when:f=>f.S.vibX||f.S.vibZ, series:[
+      {k:"vx", label:"Vibe X", unit:"", color:C.cyan, scale:"v", from:f=>f.S.vibX},
+      {k:"vy", label:"Vibe Y", unit:"", color:C.green, scale:"v", from:f=>f.S.vibY},
+      {k:"vz", label:"Vibe Z", unit:"", color:C.amber, scale:"v", from:f=>f.S.vibZ}] },
+  { title:"Wind estimate (autopilot)", h:170, when:f=>f.S.windSpd, series:[
+      {k:"ws", label:"Wind speed", unit:"m/s", color:C.sand, scale:"ms", from:f=>f.S.windSpd},
+      {k:"wd", label:"Direction", unit:"°", color:C.dim, scale:"deg", from:f=>f.S.windDir}] },
+  { title:"Power rails", h:160, when:f=>f.S.vcc, series:[
+      {k:"vcc", label:"5V rail", unit:"V", color:C.green, scale:"rail", from:f=>f.S.vcc},
+      {k:"vsv", label:"Servo rail", unit:"V", color:C.violet, scale:"rail", from:f=>f.S.vservo}] },
+  { title:"Loop timing", h:160, when:f=>f.S.schedErr||f.S.cycleMs, series:[
+      {k:"se2", label:"Scheduling error", unit:"ms", color:C.magenta, scale:"ms2", from:f=>f.S.schedErr},
+      {k:"cy", label:"Cycle duration", unit:"ms", color:C.dim, scale:"ms2", from:f=>f.S.cycleMs}] }
+];
+
+let syncingCursor=false, syncingScale=false;
+
+function axisCfg(scale, side, color){
+  return { scale, side, stroke:color||C.axis, grid:{stroke:C.grid, width:1},
+    ticks:{stroke:C.grid, width:1, size:4},
+    font:'10px "JetBrains Mono", monospace', size:52, gap:4 };
+}
+
+function buildCharts(f){
+  destroyCharts();
+  const host=$("#charts"); host.innerHTML="";
+  const xs = Array.from(f.t);
+
+  for(const def of CHART_DEFS){
+    if(def.when && !def.when(f)) continue;
+    const avail = def.series.filter(s=>{ const a=s.from(f); return a && Array.from(a).some(Number.isFinite); });
+    if(!avail.length) continue;
+
+    const panel=el("div","panel");
+    const head=el("div","panel-head");
+    head.appendChild(el("i","tick"));
+    head.appendChild(el("h3",null,esc(def.title)));
+    const right=el("div","right");
+    const png=el("button","btn sm","PNG"); png.title="Save this chart as a PNG";
+    right.appendChild(png); head.appendChild(right);
+    panel.appendChild(head);
+
+    const legend=el("div","legend");
+    for(const s of avail) legend.innerHTML += `<span><i style="background:${s.color}"></i>${esc(s.label)} <em style="font-style:normal;color:${C.axis}">${esc(s.unit)}</em></span>`;
+    panel.appendChild(legend);
+
+    const chost=el("div","chart-host");
+    panel.appendChild(chost);
+    host.appendChild(panel);
+
+    const data=[xs, ...avail.map(s=>Array.from(s.from(f), v=>Number.isFinite(v)?v:null))];
+    const scales={ x:{time:false} };
+    const seenScales=[];
+    const series=[{}];
+    for(const s of avail){
+      if(!seenScales.includes(s.scale)) seenScales.push(s.scale);
+      series.push({ label:s.label, stroke:s.color, width:1.4, scale:s.scale,
+        fill:s.fill, points:{show:false}, spanGaps:true });
+    }
+    const axes=[ {...axisCfg("x",2), size:30, values:(u,v)=>v.map(x=>fmtDur(x))} ];
+    seenScales.forEach((sc,i)=>{
+      const col = avail.find(a=>a.scale===sc).color;
+      axes.push(axisCfg(sc, i===0?3:1, col));
+    });
+
+    const opts={
+      width: chost.clientWidth||600, height: def.h,
+      padding:[10,10,0,0], legend:{show:false},
+      cursor:{ x:true, y:false, points:{show:false},
+        drag:{x:true,y:false,setScale:true},
+        focus:{prox:1e6} },
+      scales, series, axes,
+      hooks:{
+        setCursor:[u=>onCursor(u)],
+        setScale:[(u,key)=>{ if(key!=="x") propagateScale(u); }]
+      }
+    };
+    const u=new uPlot(opts, data, chost);
+    if(state.xRange) u.setScale("x", state.xRange);
+    const entry={u, chost, def};
+    state.charts.push(entry);
+
+    png.addEventListener("click",()=>savePng(u, def.title, f));
+
+    const ro=new ResizeObserver(()=>{ const w=chost.clientWidth; if(w>50) u.setSize({width:w,height:def.h}); });
+    ro.observe(chost); entry.ro=ro;
+
+    // scale sync must run on x too — attach after construction to avoid init loops
+    u.hooks.setScale.push((uu,key)=>{ if(key==="x") propagateScale(uu); });
+  }
+}
+
+function propagateScale(u){
+  if(syncingScale) return;
+  syncingScale=true;
+  const {min,max}=u.scales.x;
+  state.xRange={min,max};
+  for(const c of state.charts) if(c.u!==u) c.u.setScale("x",{min,max});
+  drawStrip();
+  syncingScale=false;
+}
+
+function onCursor(u){
+  const idx=u.cursor.idx;
+  if(idx==null){ setHudLive(null); state.cursorIdx=null; drawStrip(); updateMapMarker(null);
+    if(!syncingCursor){ syncingCursor=true;
+      for(const c of state.charts) if(c.u!==u) c.u.setCursor({left:-10,top:-10});
+      syncingCursor=false; }
+    return; }
+  state.cursorIdx=idx;
+  setHudLive(idx);
+  updateMapMarker(idx);
+  drawStrip();
+  if(syncingCursor) return;
+  syncingCursor=true;
+  const xv=u.data[0][idx];
+  for(const c of state.charts){
+    if(c.u===u) continue;
+    const left=c.u.valToPos(xv,"x");
+    c.u.setCursor({left, top:1});
+  }
+  syncingCursor=false;
+}
+
+function destroyCharts(){
+  for(const c of state.charts){ try{ c.ro&&c.ro.disconnect(); c.u.destroy(); }catch(e){} }
+  state.charts=[];
+}
+
+function savePng(u,title,f){
+  const src=u.ctx.canvas;
+  const cv=document.createElement("canvas");
+  cv.width=src.width; cv.height=src.height+34;
+  const cx=cv.getContext("2d");
+  cx.fillStyle=C.panel; cx.fillRect(0,0,cv.width,cv.height);
+  cx.drawImage(src,0,34);
+  cx.fillStyle="#DDE8EF"; cx.font='600 15px "Saira Condensed", sans-serif';
+  cx.fillText(title,12,22);
+  cx.fillStyle=C.dim; cx.font='11px "JetBrains Mono", monospace';
+  cx.fillText(`${f.platform.name} · ${f.filename}`, cx.measureText(title).width+24, 22);
+  const a=document.createElement("a");
+  a.download=`${f.platform.id}_${title.replace(/[^a-z0-9]+/gi,"_").toLowerCase()}.png`;
+  a.href=cv.toDataURL("image/png"); a.click();
+}
+
+/* ============================ flight strip ============================ */
+function drawStrip(){
+  const f=state.active; const cv=$("#strip"); if(!f||!cv) return;
+  const dpr=window.devicePixelRatio||1;
+  const w=cv.clientWidth, h=cv.clientHeight;
+  if(w<10) return;
+  cv.width=w*dpr; cv.height=h*dpr;
+  const g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0);
+  g.clearRect(0,0,w,h);
+  g.fillStyle="#0B1319"; g.fillRect(0,0,w,h);
+
+  const n=f.rows, t=f.t, T0=t[0], T1=t[n-1], span=T1-T0||1;
+  const X = v => (v-T0)/span*w;
+  const step = Math.max(1, Math.floor(n/w/2));
+
+  // altitude area
+  const aMax=Math.max(1, maxOf(f.alt)||1);
+  g.beginPath(); g.moveTo(0,h);
+  for(let k=0;k<n;k+=step){ const a=f.alt[k]; if(!Number.isFinite(a)) continue;
+    g.lineTo(X(t[k]), h-(a/aMax)*(h-8)-3); }
+  g.lineTo(w,h); g.closePath();
+  g.fillStyle="rgba(62,217,232,0.16)"; g.fill();
+  g.strokeStyle="rgba(62,217,232,0.55)"; g.lineWidth=1; g.stroke();
+
+  // power line
+  const pMin=minOf(f.power), pMax=maxOf(f.power);
+  if(Number.isFinite(pMin)&&Number.isFinite(pMax)&&pMax>pMin){
+    g.beginPath(); let started=false;
+    for(let k=0;k<n;k+=step){ const p=f.power[k]; if(!Number.isFinite(p)) continue;
+      const y=h-((p-pMin)/(pMax-pMin))*(h-10)-4;
+      started ? g.lineTo(X(t[k]),y) : (g.moveTo(X(t[k]),y), started=true); }
+    g.strokeStyle=C.amber; g.lineWidth=1.2; g.stroke();
+  }
+
+  // zoom window
+  if(state.xRange && (state.xRange.min>T0+0.01 || state.xRange.max<T1-0.01)){
+    const x0=X(state.xRange.min), x1=X(state.xRange.max);
+    g.fillStyle="rgba(10,15,19,0.62)";
+    g.fillRect(0,0,Math.max(0,x0),h); g.fillRect(Math.min(w,x1),0,w,h);
+    g.strokeStyle=C.cyan; g.lineWidth=1;
+    g.beginPath(); g.moveTo(x0,0); g.lineTo(x0,h); g.moveTo(x1,0); g.lineTo(x1,h); g.stroke();
+  }
+  // live drag
+  if(dragState.active){
+    const x0=Math.min(dragState.x0,dragState.x1), x1=Math.max(dragState.x0,dragState.x1);
+    g.fillStyle="rgba(62,217,232,0.16)"; g.fillRect(x0,0,x1-x0,h);
+  }
+  // cursor
+  if(state.cursorIdx!=null){
+    const x=X(t[state.cursorIdx]);
+    g.strokeStyle="rgba(221,232,239,0.8)"; g.lineWidth=1;
+    g.beginPath(); g.moveTo(x,0); g.lineTo(x,h); g.stroke();
+  }
+  // end labels
+  g.fillStyle=C.axis; g.font='9px "JetBrains Mono", monospace';
+  g.fillText("T+0:00",3,10);
+  const lbl=`T+${fmtDur(T1)}`;
+  g.fillText(lbl, w-g.measureText(lbl).width-3, 10);
+}
+
+const dragState={active:false,x0:0,x1:0};
+function initStrip(){
+  const cv=$("#strip");
+  const xToT = px => { const f=state.active, n=f.rows, T0=f.t[0], T1=f.t[n-1];
+    return T0 + Math.max(0,Math.min(1, px/cv.clientWidth))*(T1-T0); };
+  cv.addEventListener("mousedown",e=>{
+    if(!state.active) return;
+    dragState.active=true; dragState.x0=dragState.x1=e.offsetX; drawStrip();
+  });
+  window.addEventListener("mousemove",e=>{
+    if(!state.active) return;
+    if(dragState.active){ const r=cv.getBoundingClientRect(); dragState.x1=e.clientX-r.left; drawStrip(); }
+  });
+  window.addEventListener("mouseup",()=>{
+    if(!dragState.active) return;
+    dragState.active=false;
+    const a=xToT(Math.min(dragState.x0,dragState.x1)), b=xToT(Math.max(dragState.x0,dragState.x1));
+    if(Math.abs(dragState.x1-dragState.x0)>4 && b>a){ applyRange({min:a,max:b}); }
+    else drawStrip();
+  });
+  cv.addEventListener("dblclick",resetZoom);
+  new ResizeObserver(drawStrip).observe(cv);
+}
+function applyRange(r){
+  state.xRange=r; syncingScale=true;
+  for(const c of state.charts) c.u.setScale("x",r);
+  syncingScale=false; drawStrip();
+}
+function resetZoom(){
+  const f=state.active; if(!f) return;
+  applyRange({min:f.t[0], max:f.t[f.rows-1]});
+}
+
+/* ============================ HUD ============================ */
+const HUD_FIELDS=[
+  {k:"time",  label:"T+",        get:(f,i)=>fmtDur(f.t[i]),                   sum:f=>fmtDur(f.stats.dur)},
+  {k:"alt",   label:"Alt",  unit:"m",   get:(f,i)=>fmt(f.alt[i],1),           sum:f=>fmt(f.stats.maxAlt,1)},
+  {k:"power", label:"Power",unit:"W",   get:(f,i)=>fmt(f.power[i],0),         sum:f=>fmt(f.stats.meanPower,0)},
+  {k:"volt",  label:"Volts",unit:"V",   get:(f,i)=>fmt(f.volt?f.volt[i]:NaN,2), sum:f=>fmt(f.stats.meanV,2)},
+  {k:"curr",  label:"Amps", unit:"A",   get:(f,i)=>fmt(f.curr?f.curr[i]:NaN,1), sum:f=>fmt(f.stats.meanCurr,1)},
+  {k:"spd",   label:"Speed",unit:"m/s", get:(f,i)=>fmt(f.speed[i],1),         sum:f=>fmt(f.stats.maxSpeed,1)},
+  {k:"wh",    label:"Energy",unit:"Wh", get:(f,i)=>fmt(f.cumWh[i],2),         sum:f=>fmt(f.stats.energyWh,2)},
+  {k:"phase", label:"Phase",           get:(f,i)=>{const p=PHASE_DEFS.find(x=>x.id===f.phases.labels[i]); return p?p.name:"—";}, sum:f=>"—"}
+];
+function buildHud(){
+  const h=$("#hud"); h.innerHTML="";
+  for(const fdef of HUD_FIELDS){
+    const c=el("div","hud-cell");
+    c.innerHTML=`<div class="k">${esc(fdef.label)}</div><div class="v" data-k="${fdef.k}">—${fdef.unit?`<small>${esc(fdef.unit)}</small>`:""}</div>`;
+    h.appendChild(c);
+  }
+  const m=el("div","hud-mode","<b id='hudMode'>no log loaded</b>");
+  h.appendChild(m);
+}
+function setHudLive(i){
+  const f=state.active; if(!f) return;
+  for(const fdef of HUD_FIELDS){
+    const node=$(`#hud .v[data-k="${fdef.k}"]`); if(!node) continue;
+    const val = i==null ? fdef.sum(f) : fdef.get(f,i);
+    node.innerHTML = `${esc(val)}${fdef.unit?`<small>${esc(fdef.unit)}</small>`:""}`;
+  }
+  const mode=$("#hudMode");
+  if(mode) mode.textContent = i==null
+    ? "flight summary — hover any chart"
+    : `sample ${i+1} of ${f.rows}`;
+}
+
+/* ============================ rendering ============================ */
+function renderChips(){
+  const box=$("#chips"); box.innerHTML="";
+  if(state.flights.length<1){ box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+  state.flights.forEach((f,idx)=>{
+    const chip=el("div","chip");
+    chip.setAttribute("aria-current", f===state.active ? "true":"false");
+    chip.innerHTML=`<span class="dot" style="background:${chipColor(idx)}"></span>
+      <span>${esc(f.platform.name)} <span style="color:var(--dimmer)">· ${esc(shortName(f.filename))}</span></span>`;
+    const x=el("button","x","×"); x.title="Remove this flight";
+    x.addEventListener("click",e=>{ e.stopPropagation(); removeFlight(f); });
+    chip.appendChild(x);
+    chip.addEventListener("click",()=>setActive(f));
+    box.appendChild(chip);
+  });
+}
+function chipColor(i){ return [C.cyan,C.amber,C.green,C.magenta,C.violet,C.sand,C.red,"#8FD4B0"][i%8]; }
+function shortName(n){ return n.replace(/\.csv$/i,"").slice(0,34); }
+
+function renderMeta(f){
+  const m=f.meta;
+  /* Legacy headers carried Experiment_ID / Frame_ID / Wind_Condition; v2 files
+     do not. Showing six em-dashes for fields the schema no longer has is just
+     noise, so only render what the file actually supplied. */
+  const optional = [
+    ["Experiment", m.Experiment_ID],
+    ["Date", m.Date || (f.S.gpsutc ? String(f.S.gpsutc[0]).slice(0,10) : null)],
+    ["Frame ID", m.Frame_ID],
+    ["Sensor", m.Sensor_Model],
+    ["Wind", m.Wind_Condition],
+    ["Calibration", m.Calibration_File]
+  ].filter(([,v])=>v!=null && String(v).trim()!=="");
+  const rows=[
+    ["File", esc(f.filename)],
+    ...optional.map(([k,v])=>[k, esc(v)]),
+    ["Samples", `${f.rows.toLocaleString()} @ ${fmt(f.stats.rateHz,1)} Hz`],
+    ["Time base", esc(f.tSource)]
+  ];
+  const extra = Object.keys(m).filter(k=>!["Experiment_ID","Date","Platform_Type","Frame_ID","Sensor_Model","Wind_Condition","Calibration_File"].includes(k));
+  for(const k of extra) rows.push([esc(k.replace(/_/g," ")), esc(m[k])]);
+  $("#metaList").innerHTML = rows.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join("");
+
+  const auto = f.platformAuto!=="unknown";
+  $("#platBadge").innerHTML = auto
+    ? `<span class="badge b-cyan">matched: ${esc(f.platform.name)}</span>`
+    : `<span class="badge b-amber">platform not matched</span>`;
+}
+
+function renderSpec(f){
+  const p=f.platform;
+  const rows=[
+    ["Platform", `<b>${esc(p.name)}</b>`],
+    ["Type", esc(p.type)],
+    ["Size", esc(p.size)],
+    ["Battery", `${esc(p.capacity)}${p.packWh?` · ${fmt(p.packWh,0)} Wh`:""}`],
+    ["Cells on sheet", esc(p.chem)],
+    ["Measured pack", Number.isFinite(f.stats.meanV)
+      ? `${fmt(f.stats.meanV,2)} V mean → ${f.stats.cellsImplied}S at ${fmt(f.stats.meanV/f.stats.cellsImplied,2)} V/cell`
+      : "—"],
+    ["Supplier", esc(p.batterySrc)],
+    ["Mass, no payload", p.massKg?`${fmt(p.massKg,2)} kg`:"—"],
+    ["Max payload", p.payloadKg?`${fmt(p.payloadKg,2)} kg`:"—"],
+    ["Rated endurance", p.ratedLoaded?`${p.ratedLoaded} min loaded${p.ratedEmpty?` / ${p.ratedEmpty} min empty`:""}`:(p.ratedEmpty?`${p.ratedEmpty} min empty`:"—")],
+    ["Status", `<span class="badge ${/ready/i.test(p.status)?"b-green":/needs/i.test(p.status)?"b-amber":"b-dim"}">${esc(p.status)}</span>`],
+    ["Availability", esc(p.availability)]
+  ];
+  let html = rows.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join("");
+  $("#specList").innerHTML = html;
+  const note=$("#specList").parentElement.querySelector(".note");
+  if(note) note.remove();
+  if(p.note){ const nn=el("div","note",esc(p.note)); nn.style.marginTop="11px"; $("#specList").parentElement.appendChild(nn); }
+}
+
+function renderChannel(f){
+  const sel=$("#chanSel");
+  const keys=Object.keys(f.channels);
+  sel.innerHTML = keys.map(k=>`<option value="${k}"${k===f.activeChannel?" selected":""}>${esc(f.channels[k].label)}</option>`).join("")
+    || `<option>no power data</option>`;
+  sel.disabled = keys.length<2;
+
+  const warn=$("#chanWarn"); warn.innerHTML="";
+  const wp = worstChannelPair(f);
+  if(wp){
+    const r=wp.r;
+    if(r>1.15||r<0.87){
+      const act = f.channels[f.activeChannel];
+      const other = (wp.a===act) ? wp.b : (wp.b===act ? wp.a : wp.a);
+      const d=el("div");
+      d.style.cssText="padding:11px 13px;border-bottom:1px solid var(--line);background:#241412;display:flex;gap:11px;align-items:flex-start";
+      d.innerHTML=`<span class="badge b-red" style="flex:0 0 auto;margin-top:1px">check</span>
+        <span class="note" style="color:#F0C9C9">These numbers come from the <b>${esc(act.label)}</b> at ${fmt(act.meanW,0)} W mean.
+        The <b>${esc(other.label)}</b> reads ${fmt(other.meanW,0)} W over the same flight — a factor of ${fmt(Math.max(r,1/r),2)}.
+        Until that is resolved on a bench load, energy figures carry that uncertainty. Full detail on the Data health tab.</span>`;
+      warn.appendChild(d);
+    }
+  }
+}
+
+function renderKpis(f){
+  const s=f.stats, p=f.platform;
+  const endurPct = (Number.isFinite(s.endurMin)&&p.ratedLoaded) ? s.endurMin/p.ratedLoaded*100 : NaN;
+  const cards=[
+    {k:"Energy used", v:fmt(s.energyWh,2), u:"Wh", sub:`${fmt(s.whPerMin,2)} Wh/min`, hero:true},
+    {k:"Mean power", v:fmt(s.meanPower,0), u:"W", sub:`peak ${fmt(s.peakPower,0)} W`},
+    {k:"Specific power", v:fmt(s.wPerKg,0), u:"W/kg", sub:Number.isFinite(s.mass)?`at ${fmt(s.mass,2)} kg`:"set takeoff mass"},
+    {k:"Duration", v:fmtDur(s.dur), u:"", sub:`${f.rows.toLocaleString()} samples`},
+    {k:"Projected endurance", v:Number.isFinite(s.endurMin)?fmt(s.endurMin,1):"—", u:"min",
+      sub: Number.isFinite(endurPct)?`${fmt(endurPct,0)}% of ${p.ratedLoaded} min rated`:(p.packWh?"no rated figure":"pack Wh unknown")},
+    {k:"Energy per km", v:Number.isFinite(s.whPerKm)?fmt(s.whPerKm,1):"—", u:"Wh/km",
+      sub:`${fmt(s.dist,0)} m tracked`},
+    {k:"Max altitude", v:fmt(s.maxAlt,1), u:"m", sub:`climb ${fmt(s.maxClimb,1)} m/s`},
+    {k:"Max ground speed", v:fmt(s.maxSpeed,1), u:"m/s", sub:`mean ${fmt(s.meanSpeed,1)} m/s`},
+    {k:"Voltage sag", v:fmt(s.sag,2), u:"V",
+      sub:Number.isFinite(s.minVcell)?`min ${fmt(s.minVcell,2)} V/cell`:`min ${fmt(s.minV,2)} V`},
+    {k:"Peak current", v:fmt(s.peakCurr,1), u:"A", sub:`mean ${fmt(s.meanCurr,1)} A`},
+    {k:"Battery temp rise", v:fmt(s.tempMax-s.tempStart,1), u:"°C", sub:`peak ${fmt(s.tempMax,1)} °C`},
+    {k:"Charge counted", v:fmt(s.mAhIntegrated,0), u:"mAh", sub:`logger reported ${fmt(s.mAhLogged,0)} mAh`}
+  ];
+  $("#kpis").innerHTML = cards.map(c=>`<div class="kpi${c.hero?" hero":""}">
+    <div class="k">${esc(c.k)}</div>
+    <div class="v">${esc(c.v)}${c.u?`<small>${esc(c.u)}</small>`:""}</div>
+    <div class="sub">${esc(c.sub)}</div></div>`).join("");
+}
+
+function renderPhases(f){
+  const list=f.phases.list;
+  const total=list.reduce((a,b)=>a+b.time,0)||1;
+  const totalE=list.reduce((a,b)=>a+b.energyWh,0)||1;
+  $("#phaseBar").innerHTML = list.map(p=>
+    `<div class="phase-seg" style="width:${p.time/total*100}%;background:${p.color};opacity:.82" title="${esc(p.name)} ${fmtDur(p.time)}"></div>`).join("");
+  $("#phaseBody").innerHTML = list.map(p=>`<tr>
+    <td class="name"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${p.color};margin-right:7px"></span>${esc(p.name)}</td>
+    <td>${fmtDur(p.time)}</td><td>${fmt(p.time/total*100,1)}%</td>
+    <td>${fmt(p.meanPower,0)} W</td><td>${fmt(p.peakPower,0)} W</td>
+    <td>${fmt(p.energyWh,2)} Wh</td><td>${fmt(p.energyWh/totalE*100,1)}%</td>
+    <td>${fmt(p.meanAlt,1)} m</td></tr>`).join("");
+  renderHist(f);
+}
+
+function renderHist(f){
+  const host=$("#histHost"); host.innerHTML="";
+  const vals=Array.from(f.power).filter(Number.isFinite);
+  if(vals.length<10){ host.innerHTML='<div class="note">No power data to bin.</div>'; return; }
+  const lo=minOf(vals), hi=maxOf(vals), bins=28;
+  const w=(hi-lo)/bins || 1;
+  const counts=new Array(bins).fill(0);
+  for(const v of vals) counts[Math.min(bins-1,Math.floor((v-lo)/w))]++;
+  const mx=Math.max(...counts)||1;
+  const centers=counts.map((_,i)=>lo+w*(i+0.5));
+  const u=new uPlot({
+    width:host.clientWidth||500, height:210, legend:{show:false}, padding:[10,10,0,0],
+    cursor:{x:true,y:false,points:{show:false},drag:{x:false,y:false}},
+    scales:{x:{time:false}},
+    series:[{}, {label:"Samples", stroke:C.amber, fill:"rgba(242,163,60,0.28)", width:1.2,
+      paths:uPlot.paths.bars({size:[0.92]}), points:{show:false}}],
+    axes:[{...axisCfg("x",2), size:30, values:(u,v)=>v.map(x=>fmt(x,0))},
+          axisCfg("y",3,C.axis)]
+  },[centers,counts],host);
+  new ResizeObserver(()=>{ const w2=host.clientWidth; if(w2>50) u.setSize({width:w2,height:210}); }).observe(host);
+  const cap=el("div","note",`Battery power in ${bins} bins, ${fmt(lo,0)}–${fmt(hi,0)} W. Median ${fmt(pctl(vals,0.5),0)} W, 95th percentile ${fmt(pctl(vals,0.95),0)} W.`);
+  cap.style.marginTop="9px"; host.parentElement.appendChild(cap);
+  if(state.hist) try{state.hist.destroy();}catch(e){}
+  state.hist=u;
+}
+
+function renderChecks(f){
+  const box=$("#checks"); box.innerHTML="";
+  const order={fail:0,warn:1,pass:2};
+  const sorted=f.checks.slice().sort((a,b)=>order[a.level]-order[b.level]);
+  for(const c of sorted){
+    const cls=c.level==="fail"?"b-red":c.level==="warn"?"b-amber":"b-green";
+    const lbl=c.level==="fail"?"check":c.level==="warn"?"note":"ok";
+    const d=el("div","check");
+    d.innerHTML=`<span class="st"><span class="badge ${cls}">${lbl}</span></span>
+      <span class="tx"><b>${esc(c.title)}</b><span>${esc(c.detail)}</span></span>`;
+    box.appendChild(d);
+  }
+  const s=f.stats;
+  $("#timingList").innerHTML=[
+    ["Time base", esc(f.tSource)],
+    ["Duration", fmtDur(s.dur)],
+    ["Samples", f.rows.toLocaleString()],
+    ["Median interval", `${fmt(s.medDt*1000,1)} ms`],
+    ["Effective rate", `${fmt(s.rateHz,2)} Hz`],
+    ["Scheduling error p95", Number.isFinite(s.schedErrP95)?`${fmt(s.schedErrP95,2)} ms`:"not logged"],
+    ["Scheduling error max", Number.isFinite(s.schedErrMax)?`${fmt(s.schedErrMax,2)} ms`:"not logged"],
+    ["Cycle duration p95", Number.isFinite(s.cycleP95)?`${fmt(s.cycleP95,1)} ms`:"not logged"],
+    ["Slots skipped", Number.isFinite(s.slotsSkipped)?fmt(s.slotsSkipped,0):"not logged"],
+    ["Worst staleness", Number.isFinite(s.staleWorst&&s.staleWorst.ms)
+        ? `${esc(s.staleWorst.name)} ${fmt(s.staleWorst.ms,0)} ms (p95)` : "not logged"],
+    ["GPS synced", Number.isFinite(s.gpsSyncPct)?`${fmt(s.gpsSyncPct,1)}%`:"—"],
+    ["Power source", esc(f.powerSrc)],
+    ["Altitude source", esc(f.altSrc||"none")]
+  ].map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join("");
+
+  const rows=[];
+  for(const sig of SIGNALS){
+    const col=f.cols[sig.key];
+    if(!col){ rows.push(`<tr><td class="name" style="color:var(--dimmer)">${esc(sig.label)}</td>
+      <td colspan="3" style="text-align:left;color:var(--dimmer)">not present</td></tr>`); continue; }
+    const a=f.S[sig.key];
+    let missing="—", range="—";
+    if(a && a.BYTES_PER_ELEMENT){
+      let miss=0; for(let k=0;k<a.length;k++) if(!Number.isFinite(a[k])) miss++;
+      missing=`${fmt(miss/a.length*100,2)}%`;
+      range=`${fmt(minOf(a),2)} … ${fmt(maxOf(a),2)}${sig.unit?" "+sig.unit:""}`;
+    }
+    rows.push(`<tr><td class="name">${esc(sig.label)}</td>
+      <td style="text-align:left;font-size:11px;color:var(--dim)">${esc(col)}</td>
+      <td>${missing}</td><td style="font-size:11px">${esc(range)}</td></tr>`);
+  }
+  $("#colBody").innerHTML=rows.join("");
+  const found=Object.keys(f.cols).length;
+  $("#colCount").textContent=`${found} of ${SIGNALS.length} signals · ${f.headers.length} columns in file`;
+}
+
+/* ============================ map ============================ */
+function renderMap(f){
+  if(!f.S.lat||!f.S.lon){ $("#map").innerHTML='<div class="note" style="padding:22px">No position columns in this log.</div>'; return; }
+  const pts=[];
+  for(let k=0;k<f.rows;k++){
+    const la=f.S.lat[k], lo=f.S.lon[k];
+    if(Number.isFinite(la)&&Number.isFinite(lo)&&Math.abs(la)>0.0001) pts.push({k,la,lo});
+  }
+  if(!pts.length){ $("#map").innerHTML='<div class="note" style="padding:22px">Position columns are present but empty.</div>'; return; }
+
+  if(!state.map){
+    state.map=L.map("map",{zoomControl:true, attributionControl:true});
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",{
+      maxZoom:20, attribution:"© OpenStreetMap contributors, © CARTO"}).addTo(state.map);
+  }
+  if(state.mapLayer){ state.map.removeLayer(state.mapLayer); }
+  state.mapLayer=L.layerGroup().addTo(state.map);
+
+  const metric=$("#mapMetric").value;
+  const src = metric==="alt"?f.alt : metric==="power"?f.power : f.speed;
+  const lo=minOf(src), hi=maxOf(src);
+  $("#rampLo").textContent = fmt(lo,1);
+  $("#rampHi").textContent = fmt(hi,1) + (metric==="alt"?" m":metric==="power"?" W":" m/s");
+
+  const stride=Math.max(1,Math.floor(pts.length/500));
+  for(let i=stride;i<pts.length;i+=stride){
+    const a=pts[i-stride], b=pts[i];
+    const v=src[b.k];
+    const col=rampColor(hi>lo ? (v-lo)/(hi-lo) : 0.5);
+    L.polyline([[a.la,a.lo],[b.la,b.lo]],{color:col,weight:3.5,opacity:.92}).addTo(state.mapLayer);
+  }
+  const first=pts[0], last=pts[pts.length-1];
+  L.circleMarker([first.la,first.lo],{radius:6,color:C.green,weight:2,fillColor:"#0A0F13",fillOpacity:1})
+    .bindTooltip("Launch").addTo(state.mapLayer);
+  L.circleMarker([last.la,last.lo],{radius:6,color:C.red,weight:2,fillColor:"#0A0F13",fillOpacity:1})
+    .bindTooltip("Last fix").addTo(state.mapLayer);
+
+  state.mapMarker=L.circleMarker([first.la,first.lo],
+    {radius:5,color:"#fff",weight:2,fillColor:C.cyan,fillOpacity:1}).addTo(state.mapLayer);
+  state.mapMarker.setStyle({opacity:0,fillOpacity:0});
+
+  const b=L.latLngBounds(pts.map(p=>[p.la,p.lo]));
+  state.map.fitBounds(b,{padding:[28,28]});
+  setTimeout(()=>state.map.invalidateSize(),60);
+
+  const s=f.stats;
+  const latSpread=(maxOf(f.S.lat)-minOf(f.S.lat))*111320;
+  const lonSpread=(maxOf(f.S.lon)-minOf(f.S.lon))*111320*Math.cos(first.la*Math.PI/180);
+  $("#posList").innerHTML=[
+    ["Launch", `${fmt(first.la,6)}, ${fmt(first.lo,6)}`],
+    ["Ground track", `${fmt(s.dist,0)} m`],
+    ["Bounding box", `${fmt(Math.abs(latSpread),0)} × ${fmt(Math.abs(lonSpread),0)} m`],
+    ["Max altitude", `${fmt(s.maxAlt,1)} m above launch`],
+    ["Max ground speed", `${fmt(s.maxSpeed,1)} m/s`],
+    ["Fixes plotted", pts.length.toLocaleString()],
+    ["Satellites", Number.isFinite(s.satsMin)?fmt(s.satsMin,0)+" min":"—"]
+  ].map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join("");
+
+  $("#trackNote").innerHTML = `Colour follows ${metric==="alt"?"height above launch":metric==="power"?"instantaneous battery power":"ground speed"},
+    from ${fmt(lo,1)} to ${fmt(hi,1)}. The white marker follows your cursor on any chart, so you can point at a
+    current spike and see where the aircraft was when it happened. Ground track sums fix-to-fix distance and
+    rejects jumps over 200 m, so a brief GPS glitch won't inflate the total.`;
+  f._pts=pts;
+}
+function updateMapMarker(i){
+  const f=state.active;
+  if(!f||!state.mapMarker||!f.S.lat) return;
+  if(i==null){ state.mapMarker.setStyle({opacity:0,fillOpacity:0}); return; }
+  const la=f.S.lat[i], lo=f.S.lon[i];
+  if(!Number.isFinite(la)||!Number.isFinite(lo)) return;
+  state.mapMarker.setLatLng([la,lo]);
+  state.mapMarker.setStyle({opacity:1,fillOpacity:1});
+}
+
+/* ============================ compare ============================ */
+function renderCompare(){
+  const metric=$("#cmpMetric").value;
+  const labels={whPerMin:"Wh/min",meanPower:"W",wPerKg:"W/kg",energyWh:"Wh",whPerKm:"Wh/km",durMin:"min",endurMin:"min"};
+  const rows=state.flights.map((f,i)=>({f,i,val:f.stats[metric]}));
+  const mx=Math.max(...rows.map(r=>Number.isFinite(r.val)?r.val:0),0.0001);
+  $("#cmpBars").innerHTML = rows.map(r=>`
+    <div class="bar-row">
+      <span class="nm">${esc(r.f.platform.name)}</span>
+      <span class="bar-track"><span class="bar-fill" style="width:${Number.isFinite(r.val)?Math.max(1,r.val/mx*100):0}%;background:${chipColor(r.i)}"></span></span>
+      <span class="val">${Number.isFinite(r.val)?fmt(r.val, r.val<10?2:0):"—"} <span style="color:var(--dimmer)">${labels[metric]}</span></span>
+    </div>`).join("") || '<div class="note">Load a log to compare.</div>';
+
+  $("#cmpBody").innerHTML = state.flights.map((f,i)=>{
+    const s=f.stats;
+    return `<tr>
+      <td class="name"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${chipColor(i)};margin-right:7px"></span>${esc(shortName(f.filename))}</td>
+      <td style="text-align:left" class="name">${esc(f.platform.name)}</td>
+      <td style="text-align:left;font-size:11px;color:var(--dim)">${esc(f.platform.type)}</td>
+      <td>${fmtDur(s.dur)}</td><td>${fmt(s.meanPower,0)}</td><td>${fmt(s.peakPower,0)}</td>
+      <td>${fmt(s.energyWh,2)}</td><td>${fmt(s.whPerMin,2)}</td><td>${fmt(s.wPerKg,0)}</td>
+      <td>${Number.isFinite(s.whPerKm)?fmt(s.whPerKm,1):"—"}</td>
+      <td>${fmt(s.maxAlt,1)}</td><td>${fmt(s.dist,0)}</td>
+      <td>${Number.isFinite(s.minVcell)?fmt(s.minVcell,2):"—"}</td></tr>`;
+  }).join("") || '<tr><td colspan="13" class="note" style="text-align:left">No flights loaded.</td></tr>';
+}
+
+function summaryRows(){
+  return state.flights.map(f=>{
+    const s=f.stats;
+    return {
+      file:f.filename, platform:f.platform.name, platform_type:f.platform.type,
+      experiment:f.meta.Experiment_ID||"", date:f.meta.Date||"", frame_id:f.meta.Frame_ID||"",
+      wind:f.meta.Wind_Condition||"",
+      samples:f.rows, rate_hz:+fmt(s.rateHz,2).replace(/,/g,""), duration_s:+s.dur.toFixed(2),
+      energy_wh:+s.energyWh.toFixed(3), mean_power_w:+s.meanPower.toFixed(1),
+      peak_power_w:+s.peakPower.toFixed(1), wh_per_min:+s.whPerMin.toFixed(3),
+      takeoff_mass_kg:s.mass??"", w_per_kg:Number.isFinite(s.wPerKg)?+s.wPerKg.toFixed(1):"",
+      wh_per_km:Number.isFinite(s.whPerKm)?+s.whPerKm.toFixed(2):"",
+      projected_endurance_min:Number.isFinite(s.endurMin)?+s.endurMin.toFixed(1):"",
+      max_alt_m:+s.maxAlt.toFixed(2), max_speed_ms:+s.maxSpeed.toFixed(2),
+      track_m:+s.dist.toFixed(1), mean_current_a:+s.meanCurr.toFixed(2),
+      peak_current_a:+s.peakCurr.toFixed(2), min_v:+s.minV.toFixed(3),
+      min_v_per_cell:Number.isFinite(s.minVcell)?+s.minVcell.toFixed(3):"",
+      sag_v:+s.sag.toFixed(3), temp_rise_c:+(s.tempMax-s.tempStart).toFixed(2),
+      mah_integrated:+s.mAhIntegrated.toFixed(0),
+      mah_logged:Number.isFinite(s.mAhLogged)?+s.mAhLogged.toFixed(0):"",
+      checks_failed:f.checks.filter(c=>c.level==="fail").length,
+      checks_warned:f.checks.filter(c=>c.level==="warn").length
+    };
+  });
+}
+function download(name, text, type){
+  const b=new Blob([text],{type}); const a=document.createElement("a");
+  a.href=URL.createObjectURL(b); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+function exportCsv(){
+  const rows=summaryRows(); if(!rows.length) return;
+  const keys=Object.keys(rows[0]);
+  const esc2=v=>{ const s=String(v??""); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; };
+  const csv=[keys.join(","), ...rows.map(r=>keys.map(k=>esc2(r[k])).join(","))].join("\n");
+  download(`platform_energy_summary_${new Date().toISOString().slice(0,10)}.csv`,csv,"text/csv");
+}
+function exportJson(){
+  const payload={ generated:new Date().toISOString(), flights:summaryRows(),
+    checks:state.flights.map(f=>({file:f.filename, checks:f.checks})) };
+  download(`platform_energy_summary_${new Date().toISOString().slice(0,10)}.json`,
+    JSON.stringify(payload,null,2),"application/json");
+}
+
+/* ============================ flow ============================ */
+/* ============================ commander brief ============================
+   One question first: is this sortie's data usable, and did the aircraft fly
+   the profile? Everything that is merely interesting lives on the other tabs. */
+function briefVerdict(f){
+  const s=f.stats;
+  const fails = f.checks.filter(c=>c.level==="fail");
+  const warns = f.checks.filter(c=>c.level==="warn");
+  const reasons=[];
+
+  // Blocking: the data cannot be trusted for analysis.
+  if(Number.isFinite(s.clipEvents)&&s.clipEvents>0) reasons.push("IMU clipped");
+  if(Number.isFinite(s.vccMin)&&s.vccMin<4.6) reasons.push("5 V rail dipped");
+  if(Number.isFinite(s.channelSpread)&&s.channelSpread>1.15) reasons.push("power channels disagree");
+  if(Number.isFinite(s.schedErrP95)&&s.schedErrP95>20) reasons.push("sample cadence not held");
+  if(f.rows<20) reasons.push("almost no samples");
+  /* Any failing consistency check is blocking on its own, whether or not it
+     matches one of the named conditions above. */
+  for(const c of fails) if(!reasons.length || reasons.length<4) reasons.push(c.title.toLowerCase());
+
+  if(reasons.length)
+    return {level:"bad", stamp:"HOLD", head:"Do not credit this sortie yet",
+      note:`${[...new Set(reasons)].slice(0,3).join("; ")}. ${fails.length} blocking check${fails.length===1?"":"s"} failed — see Needs attention below, then Data health for the full detail.`};
+
+  if(warns.length)
+    return {level:"warn", stamp:"REVIEW", head:"Usable, with caveats",
+      note:`No blocking failures. ${warns.length} item${warns.length===1?"":"s"} need${warns.length===1?"s":""} a look before this feeds a comparison — most often staleness or a marginal channel.`};
+
+  return {level:"ok", stamp:"GO", head:"Clean sortie",
+    note:`All ${f.checks.length} consistency checks passed. Timing held, the power channels agree, and every measurement was fresh when written.`};
+}
+
+/* Keep the visible section in step with the selected tab. Without this the
+   first load leaves every view hidden until a tab is clicked. */
+function syncViewToTab(){
+  let tab = document.querySelector('.tab[aria-selected="true"]') || document.querySelector(".tab");
+  if(!tab) return;
+  tab.setAttribute("aria-selected","true");
+  document.querySelectorAll(".view").forEach(v=>v.hidden = v.id!==tab.dataset.view);
+}
+
+function renderBrief(f){
+  const s=f.stats, p=f.platform;
+  const v=briefVerdict(f);
+  const host=$("#verdict");
+  host.className="verdict "+v.level;
+  host.innerHTML=`<div class="vstamp">${v.stamp}</div>
+    <div class="vbody"><div class="vhead">${esc(v.head)}</div>
+    <div class="vnote">${esc(v.note)}</div></div>`;
+
+  /* Eight numbers. Energy and endurance because that is the programme
+     question; profile adherence because that is the sortie-credit question;
+     cadence and freshness because they decide whether the rest means anything. */
+  const cards=[
+    {k:"Energy used", v:fmt(s.energyWh,2), u:"Wh",
+     sub:Number.isFinite(s.energyWhLogged)
+        ? `autopilot counted ${fmt(s.energyWhLogged,2)} Wh` : `${fmt(s.whPerMin,2)} Wh/min`, hero:true},
+    {k:"Mean power", v:fmt(s.meanPower,0), u:"W", sub:`peak ${fmt(s.peakPower,0)} W`},
+    {k:"Duration", v:fmtDur(s.dur), u:"",
+     sub:Number.isFinite(s.armedPct)?`${fmt(s.armedPct,0)}% armed`:`${f.rows.toLocaleString()} samples`},
+    {k:"Projected endurance", v:Number.isFinite(s.endurMin)?fmt(s.endurMin,1):"—", u:"min",
+     sub:p.ratedLoaded?`${fmt(s.endurMin/p.ratedLoaded*100,0)}% of ${p.ratedLoaded} min rated`:"pack Wh unknown"},
+    {k:"Sample cadence", v:Number.isFinite(s.rateHz)?fmt(s.rateHz,2):"—", u:"Hz",
+     sub:Number.isFinite(s.schedErrP95)?`error p95 ${fmt(s.schedErrP95,2)} ms`:"from timestamps"},
+    {k:"Altitude error", v:Number.isFinite(s.navAltErrP95)?fmt(s.navAltErrP95,2):"—", u:"m",
+     sub:Number.isFinite(s.navXtrackP95)?`cross-track ${fmt(s.navXtrackP95,1)} m`:"vs commanded"},
+    {k:"Vibration peak", v:Number.isFinite(s.vibPeak)?fmt(s.vibPeak,1):"—", u:"",
+     sub:Number.isFinite(s.clipEvents)?(s.clipEvents>0?`${fmt(s.clipEvents,0)} clip events`:"no clipping"):"—"},
+    {k:"Wind (autopilot)", v:Number.isFinite(s.windMean)?fmt(s.windMean,1):"—", u:"m/s",
+     sub:Number.isFinite(s.windMax)?`gust ${fmt(s.windMax,1)} m/s`:"not estimated"}
+  ];
+  $("#briefKpis").innerHTML = cards.map(c=>
+    `<div class="kpi${c.hero?" hero":""}"><div class="k">${esc(c.k)}</div>
+     <div class="v">${esc(c.v)}<small>${esc(c.u)}</small></div>
+     <div class="s">${esc(c.sub)}</div></div>`).join("");
+
+  // Exceptions only: a commander does not need the list of things that passed.
+  const exc = f.checks.filter(c=>c.level!=="pass")
+                      .sort((a,b)=>(a.level==="fail"?0:1)-(b.level==="fail"?0:1));
+  const box=$("#exceptions");
+  box.innerHTML = exc.length
+    ? exc.map(c=>`<div class="exc">
+        <span class="badge ${c.level==="fail"?"b-red":"b-amber"} lvl">${c.level==="fail"?"blocking":"review"}</span>
+        <span class="txt"><div class="t">${esc(c.title)}</div><div class="d">${c.detail}</div></span></div>`).join("")
+    : `<div class="exc-none">Nothing flagged. All ${f.checks.length} consistency checks passed.</div>`;
+  $("#excCount").textContent = exc.length
+    ? `${exc.filter(c=>c.level==="fail").length} blocking · ${exc.filter(c=>c.level==="warn").length} review`
+    : `${f.checks.length} checks passed`;
+
+  const row=(k,v)=>`<dt>${esc(k)}</dt><dd>${v}</dd>`;
+  $("#briefSortie").innerHTML = [
+    row("Platform", `${esc(p.name)} <span class="note">${esc(p.type||"")}</span>`),
+    row("Session", esc(f.meta.session_id || f.meta.Experiment_ID || f.filename)),
+    row("Started", esc(f.meta.start_utc || f.meta.Date || "—")),
+    row("Operator", esc(f.meta.operator || "—")),
+    row("Condition", esc(f.meta.factorial_condition || f.meta.Wind_Condition || "—")
+        + (f.meta.replicate ? ` · replicate ${esc(f.meta.replicate)}` : "")),
+    row("Commanded", [f.meta.commanded_altitude_m ? `${esc(f.meta.commanded_altitude_m)} m` : null,
+                      f.meta.commanded_speed_ms ? `${esc(f.meta.commanded_speed_ms)} m/s` : null]
+                     .filter(Boolean).join(" · ") || "—"),
+    row("Flown", `${fmtDur(s.dur)} · max ${fmt(s.maxAlt,1)} m · ${fmt(s.dist,0)} m track`)
+  ].join("");
+
+  const stale=s.staleWorst||{};
+  $("#briefIntegrity").innerHTML = [
+    row("Schema", f.schemaV2 ? `v2 · ${f.headers.length} columns` : `legacy · ${f.headers.length} columns`),
+    row("Time base", esc(f.tSource)),
+    row("Cadence", Number.isFinite(s.schedErrP95)
+        ? `${fmt(s.rateHz,2)} Hz · error p95 ${fmt(s.schedErrP95,2)} ms · max ${fmt(s.schedErrMax,2)} ms`
+        : `${fmt(s.rateHz,2)} Hz (inferred from timestamps)`),
+    row("Slots skipped", Number.isFinite(s.slotsSkipped) ? fmt(s.slotsSkipped,0) : "—"),
+    row("Worst staleness", Number.isFinite(stale.ms)
+        ? `${esc(stale.name)} at ${fmt(stale.ms,0)} ms (p95)` : "—"),
+    row("Power channels", Number.isFinite(s.channelSpread)
+        ? `${Object.keys(f.channels).length} · worst spread ×${fmt(s.channelSpread,2)}`
+        : `${Object.keys(f.channels).length}`),
+    row("Link errors", Number.isFinite(s.linkErrors) ? fmt(s.linkErrors,0) : "—"),
+    row("5 V rail", Number.isFinite(s.vccMin) ? `min ${fmt(s.vccMin,2)} V · mean ${fmt(s.vccMean,2)} V` : "—")
+  ].join("");
+}
+
+function setActive(f){
+  state.active=f;
+  state.xRange={min:f.t[0], max:f.t[f.rows-1]};
+  state.cursorIdx=null;
+  $("#empty").hidden=true;
+  $("#stripWrap").hidden=false;
+  syncViewToTab();
+  renderChips();
+  renderBrief(f);
+  renderMeta(f); renderSpec(f); renderChannel(f); renderKpis(f);
+  buildCharts(f);
+  renderPhases(f);
+  renderChecks(f);
+  renderCompare();
+  $("#massIn").value = Number.isFinite(f.massKg)? f.massKg : "";
+  $("#packIn").value = Number.isFinite(f.packWh)? f.packWh : "";
+  buildPlatformSelect(f);
+  setHudLive(null);
+  drawStrip();
+  if(!$("#v-track").hidden) renderMap(f);
+}
+function buildPlatformSelect(f){
+  const sel=$("#platSel");
+  sel.innerHTML = [UNKNOWN_PLATFORM,...PLATFORMS]
+    .map(p=>`<option value="${p.id}"${p.id===f.platform.id?" selected":""}>${esc(p.name)}</option>`).join("");
+}
+function removeFlight(f){
+  state.flights=state.flights.filter(x=>x!==f);
+  if(state.active===f){
+    if(state.flights.length) setActive(state.flights[0]);
+    else{ state.active=null; destroyCharts(); $("#empty").hidden=false; $("#stripWrap").hidden=true;
+      $("#charts").innerHTML=""; renderChips(); renderCompare(); setHudPlaceholder(); }
+  } else { renderChips(); renderCompare(); }
+}
+function setHudPlaceholder(){
+  document.querySelectorAll("#hud .v").forEach(n=>n.innerHTML="—");
+  const m=$("#hudMode"); if(m) m.textContent="no log loaded";
+}
+
+function handleFiles(list){
+  const files=Array.from(list).filter(f=>/\.(csv|txt)$/i.test(f.name));
+  if(!files.length){ alert("Those files aren't CSVs. Load the .csv the Pi writes."); return; }
+  let loaded=0, errors=[];
+  files.forEach(file=>{
+    const r=new FileReader();
+    r.onload=()=>{
+      try{
+        const f=parseFlight(String(r.result), file.name);
+        state.flights.push(f);
+        setActive(f);
+      }catch(e){ errors.push(`${file.name}: ${e.message}`); }
+      if(++loaded===files.length && errors.length)
+        alert("Some files couldn't be read:\n\n"+errors.join("\n"));
+    };
+    r.onerror=()=>{ errors.push(`${file.name}: could not be read from disk`);
+      if(++loaded===files.length) alert(errors.join("\n")); };
+    r.readAsText(file);
+  });
+}
+
+/* ============================ wiring ============================ */
+function init(){
+  buildHud(); setHudPlaceholder(); initStrip();
+
+  $("#btnLoad").addEventListener("click",()=>$("#file").click());
+  $("#btnLoad2").addEventListener("click",()=>$("#file").click());
+  $("#file").addEventListener("change",e=>{ handleFiles(e.target.files); e.target.value=""; });
+  $("#btnReset").addEventListener("click",resetZoom);
+  $("#btnExport").addEventListener("click",()=>{
+    if(!state.flights.length){ alert("Load at least one flight log first."); return; }
+    exportJson();
+  });
+  $("#btnCsv").addEventListener("click",()=>{
+    if(!state.flights.length){ alert("Load at least one flight log first."); return; }
+    exportCsv();
+  });
+
+  const drop=$("#drop");
+  ["dragenter","dragover"].forEach(ev=>document.addEventListener(ev,e=>{
+    e.preventDefault(); if(drop) drop.classList.add("over"); }));
+  ["dragleave","drop"].forEach(ev=>document.addEventListener(ev,e=>{
+    e.preventDefault(); if(drop&&ev==="dragleave"&&e.relatedTarget) return;
+    if(drop) drop.classList.remove("over"); }));
+  document.addEventListener("drop",e=>{ e.preventDefault();
+    if(e.dataTransfer&&e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
+
+  $("#tabs").addEventListener("click",e=>{
+    const b=e.target.closest(".tab"); if(!b) return;
+    document.querySelectorAll(".tab").forEach(t=>t.setAttribute("aria-selected", t===b?"true":"false"));
+    document.querySelectorAll(".view").forEach(v=>v.hidden = v.id!==b.dataset.view);
+    if(b.dataset.view==="v-track" && state.active) renderMap(state.active);
+    if(b.dataset.view==="v-compare") renderCompare();
+    for(const c of state.charts) c.u.setSize({width:c.chost.clientWidth, height:c.u.height});
+  });
+
+  $("#mapMetric").addEventListener("change",()=>{ if(state.active) renderMap(state.active); });
+  $("#cmpMetric").addEventListener("change",renderCompare);
+
+  $("#platSel").addEventListener("change",e=>{
+    const f=state.active; if(!f) return;
+    f.platform = [UNKNOWN_PLATFORM,...PLATFORMS].find(p=>p.id===e.target.value)||UNKNOWN_PLATFORM;
+    f.massKg = f.platform.massKg; f.packWh = f.platform.packWh;
+    f.stats = computeStats(f); f.checks = runChecks(f);
+    renderSpec(f); renderKpis(f); renderChecks(f); renderCompare(); renderChips(); renderMeta(f);
+    $("#massIn").value = Number.isFinite(f.massKg)? f.massKg : "";
+    $("#packIn").value = Number.isFinite(f.packWh)? f.packWh : "";
+  });
+  $("#packIn").addEventListener("change",e=>{
+    const f=state.active; if(!f) return;
+    const v=parseFloat(e.target.value);
+    f.packWh = Number.isFinite(v)&&v>0 ? v : f.platform.packWh;
+    f.stats = computeStats(f); f.checks = runChecks(f);
+    renderKpis(f); renderChecks(f); renderCompare();
+  });
+  $("#chanSel").addEventListener("change",e=>{
+    const f=state.active; if(!f||!f.channels[e.target.value]) return;
+    applyChannel(f, e.target.value);
+    renderChannel(f); renderKpis(f); renderSpec(f); renderChecks(f); renderCompare();
+    buildCharts(f); renderPhases(f); drawStrip(); setHudLive(null);
+  });
+  $("#massIn").addEventListener("change",e=>{
+    const f=state.active; if(!f) return;
+    const v=parseFloat(e.target.value);
+    f.massKg = Number.isFinite(v)&&v>0 ? v : f.platform.massKg;
+    f.stats = computeStats(f);
+    renderKpis(f); renderCompare();
+  });
+
+  window.addEventListener("keydown",e=>{
+    if(e.key==="Escape") resetZoom();
+  });
+  window.addEventListener("resize",()=>drawStrip());
+}
+init();
+</script>
+</body>
+</html>
